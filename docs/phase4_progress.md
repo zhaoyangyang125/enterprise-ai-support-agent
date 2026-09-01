@@ -4,7 +4,7 @@ Last updated: 2026-09-01
 
 ## Current Scope
 
-Vertical slice 3: local Chat Agent / Tool integration.
+Vertical slice 4: safe leave-request write workflow.
 
 ## Completed
 
@@ -84,6 +84,14 @@ Vertical slice 3: local Chat Agent / Tool integration.
   permission through the seed command.
 - Added Agent and Chat API tests and completed a real local smoke test through
   the fully assembled dependency chain.
+- Added Prepare and Confirm APIs for self-only leave-request creation.
+- Added PendingLeaveAction and LeaveRequest models, including user-scoped
+  idempotency uniqueness.
+- Added final revalidation, atomic balance reservation, overlap validation,
+  explicit confirmation, transaction rollback, and idempotent retry behavior.
+- Added CreateLeaveRequestTool as a thin bridge to the same safe write service.
+- Kept ordinary natural-language Chat from triggering writes until structured
+  conversation state is implemented.
 
 ## Modified Files
 
@@ -115,6 +123,16 @@ Vertical slice 3: local Chat Agent / Tool integration.
 - `tests/services/test_rag_service.py`
 - `tests/repositories/test_document_access_repository.py`
 - `tests/repositories/test_vector_repository.py`
+- `app/api/leave_requests.py`
+- `app/repositories/leave_request_repository.py`
+- `app/schemas/leave_request.py`
+- `app/services/leave_request_service.py`
+- `app/tools/create_leave_request_tool.py`
+- `tests/services/test_leave_request_service.py`
+- `tests/repositories/test_leave_request_repository.py`
+- `tests/api/test_leave_request_api.py`
+- `tests/e2e/test_leave_request_flow.py`
+- `tests/tools/test_create_leave_request_tool.py`
 
 ## Verification Results
 
@@ -149,27 +167,35 @@ Vertical slice 3: local Chat Agent / Tool integration.
 - Chat/Agent/Tool integration and the entire suite: 24 tests passed.
 - Real local `/api/chat` smoke tests returned HTTP 200 for both leave balance
   and authorized policy search.
+- Safe leave-request Service, API, Repository, Tool, and E2E coverage brought
+  the full suite to 41 passed.
+- A forced failure after request INSERT proved that balance, request, and token
+  state all roll back.
+- A real HTTP Prepare/Confirm/retry flow proved one request row and one balance
+  deduction.
 
 ## Git Status
 
 - Current branch: `feature/phase4-core-backend`
 - Vertical slice 1 is stored in local commit `9acf307`.
 - Authorized RAG core is stored in local commit `8b6d8fc`.
-- Current Chat/Agent/Tool changes are modified/untracked and not yet committed.
+- Chat/Agent/Tool integration is stored in local commit `9e1a513`.
+- Current safe-write changes are modified/untracked and not yet committed.
 - No `git push` has been executed.
 - `practice/` and `tests/services/test_leave_availability_service.py` are
   learning-only and must remain outside the first formal feature commit.
 
 ## Next Step
 
-Selectively commit the formal Chat/Agent/Tool integration, then begin document
-ingestion and the replaceable production vector adapter.
+Selectively commit the formal safe-write files, then begin document ingestion,
+the replaceable vector adapter, and Docker packaging.
 
 ## Handoff Summary
 
-Vertical slice 1 and the Authorized RAG core are saved in local commits. The
-local `POST /api/chat` path now routes leave-balance and company-policy questions
-through controlled Tools to their existing Services. The full suite passes 24
-tests and both real local smoke requests return HTTP 200. Document ingestion,
-Chroma, real embeddings, and an LLM provider are not yet complete. No push has
-been performed, and learning-only files remain outside formal work.
+The two read chains and local Chat/Agent/Tool integration are saved in three
+local commits. The safe leave-request chain now implements Prepare, explicit
+Confirm, final revalidation, one transaction, atomic balance reservation, and
+idempotency. The full suite passes 41 tests, including rollback fault injection
+and a real HTTP idempotent retry. Document ingestion, a production vector
+adapter, Docker, and final delivery validation remain. No push has been
+performed, and learning-only files remain outside formal work.

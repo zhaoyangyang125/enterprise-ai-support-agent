@@ -1,6 +1,6 @@
-from datetime import datetime
+from datetime import date, datetime
 
-from sqlalchemy import DateTime, Float, ForeignKey, Integer, String, UniqueConstraint
+from sqlalchemy import Boolean, Date, DateTime, Float, ForeignKey, Integer, String, UniqueConstraint
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
@@ -85,3 +85,56 @@ class DocumentPermission(Base):
     subject_type: Mapped[str] = mapped_column(String, nullable=False)
     subject_id: Mapped[str] = mapped_column(String, nullable=False)
     action: Mapped[str] = mapped_column(String, nullable=False, default="read")
+
+
+class LeaveRequest(Base):
+    """表示一次已经创建的年假申请业务记录。 / Represents one created leave-request business record."""
+
+    __tablename__ = "leave_requests"
+    __table_args__ = (
+        UniqueConstraint(
+            "user_id",
+            "idempotency_key",
+            name="uq_leave_request_user_idempotency",
+        ),
+    )
+
+    request_id: Mapped[str] = mapped_column(String, primary_key=True)
+    user_id: Mapped[str] = mapped_column(
+        ForeignKey("users.user_id"),
+        nullable=False,
+    )
+    start_date: Mapped[date] = mapped_column(Date, nullable=False)
+    end_date: Mapped[date] = mapped_column(Date, nullable=False)
+    requested_days: Mapped[float] = mapped_column(Float, nullable=False)
+    remaining_after_request: Mapped[float] = mapped_column(Float, nullable=False)
+    approval_required: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    status: Mapped[str] = mapped_column(String, nullable=False)
+    idempotency_key: Mapped[str] = mapped_column(String, nullable=False)
+    confirmation_token: Mapped[str] = mapped_column(String, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+
+
+class PendingLeaveAction(Base):
+    """保存等待用户明确确认的年假申请预览。 / Stores a leave-request preview awaiting explicit user confirmation."""
+
+    __tablename__ = "pending_leave_actions"
+
+    confirmation_token: Mapped[str] = mapped_column(String, primary_key=True)
+    user_id: Mapped[str] = mapped_column(
+        ForeignKey("users.user_id"),
+        nullable=False,
+    )
+    start_date: Mapped[date] = mapped_column(Date, nullable=False)
+    end_date: Mapped[date] = mapped_column(Date, nullable=False)
+    requested_days: Mapped[float] = mapped_column(Float, nullable=False)
+    current_balance: Mapped[float] = mapped_column(Float, nullable=False)
+    remaining_after_request: Mapped[float] = mapped_column(Float, nullable=False)
+    approval_required: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    status: Mapped[str] = mapped_column(String, nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    executed_request_id: Mapped[str | None] = mapped_column(
+        ForeignKey("leave_requests.request_id"),
+        nullable=True,
+    )

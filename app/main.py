@@ -4,10 +4,14 @@ from collections.abc import AsyncIterator
 from fastapi import FastAPI
 
 from app.api.chat import router as chat_router
-from app.api.error_handlers import leave_balance_not_found_handler
+from app.api.error_handlers import (
+    leave_balance_not_found_handler,
+    leave_request_error_handler,
+)
 from app.api.leave_balance import router as leave_balance_router
+from app.api.leave_requests import router as leave_requests_router
 from app.db.session import create_schema
-from app.services.errors import LeaveBalanceNotFoundError
+from app.services.errors import LeaveBalanceNotFoundError, LeaveRequestError
 
 
 @asynccontextmanager
@@ -23,5 +27,7 @@ app.add_exception_handler(
     LeaveBalanceNotFoundError,
     leave_balance_not_found_handler,
 )
+app.add_exception_handler(LeaveRequestError, leave_request_error_handler)
 app.include_router(leave_balance_router)
+app.include_router(leave_requests_router)
 app.include_router(chat_router)

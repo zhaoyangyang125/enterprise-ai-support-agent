@@ -11,7 +11,7 @@
 | 项目 | 内容 |
 |---|---|
 | 文档名称 | Project 3 详细设计书 |
-| Document Version | v0.7-draft |
+| Document Version | v0.8-draft |
 | Status | Draft（草稿，尚未正式 Review） |
 | Created Date | 2026-08-24 |
 | Last Updated | 2026-09-01 |
@@ -19,8 +19,8 @@
 | Reviewed By | Pending（待审阅） |
 | Approved By | Pending（待批准） |
 | Related Phase | Phase 4 Coding |
-| Current Scope | 查询自己的年假余额；Authorized RAG Read；Chat Agent/Tool 接入 |
-| Related Requirements | `REQ-F-001`～`REQ-F-004`、`REQ-F-005`、`REQ-F-016`、`NFR-SEC-001` |
+| Current Scope | 两条安全读取链；Chat Agent/Tool；安全年假申请写入链 |
+| Related Requirements | `REQ-F-001`～`REQ-F-005`、`REQ-F-007`～`REQ-F-016`、`NFR-SEC-001` |
 
 ### 0.1 状态定义
 
@@ -55,6 +55,7 @@
 | v0.5 | 2026-09-01 | 固化 Service、API、Repository 测试矩阵和测试追踪编号 | Phase 4 Verification | Draft |
 | v0.6 | 2026-09-01 | 固化 Authorized RAG Read 的检索前权限过滤、有效版本、证据阈值和 metadata citation 契约 | Original Specification + Phase 4 Decision | Draft |
 | v0.7 | 2026-09-01 | 接入 `POST /api/chat`、确定性 AgentRouter 与两个只读 Tool，并固化统一响应和测试 | Original Specification + Phase 4 Decision | Draft |
+| v0.8 | 2026-09-01 | 固化安全年假申请的 Prepare/Confirm/Revalidate/Transaction/Execute、余额预留和 Idempotency 契约 | Original Specification + Phase 4 Decision | Draft |
 
 变更历史只记录影响接口、数据模型、权限、异常处理或测试预期的重要变化；排版和错别字修正不单独增加版本。
 
@@ -396,7 +397,146 @@ Authentication: Required
 
 ---
 
-## 5. 设计决定记录 / Decision Log
+## 5. 纵向切片 3：安全年假申请 / Safe Leave Request
+
+### 5.1 对应上位式样 / Source Specifications
+
+| 类型 | 位置 | 内容 |
+|---|---|---|
+| Requirement | `REQ-F-007`～`REQ-F-015` | 本人申请、余额与规则验证、确认信息、明确确认、成功/失败结果 |
+| Function | `FN-LEAVE-002` | `Validate -> Confirm -> Revalidate -> Execute` |
+| API | `API-004` | `POST /api/me/leave-requests`，Self + Confirm |
+| Permission Matrix | `leave_request / create` | Self only + explicit confirmation required |
+| Data | `LeaveRequest` | Business DB 中的业务与交易记录；`User 1:N LeaveRequest` |
+| Basic Design | §4.3 | `CreateLeaveRequestTool -> validate -> pending_action -> confirm -> revalidate -> create` |
+| Basic Design | §5 | `WAITING_CONFIRMATION -> CONFIRMED -> EXECUTING -> SUCCESS/FAILED` |
+
+### 5.2 API 与两阶段契约
+
+Prepare 是 Phase 4 为满足明确确认流程增加的辅助端点：
+
+```text
+POST /api/me/leave-requests/prepare
+```
+
+请求只接受日期，不接受目标 `user_id` 或客户端计算的申请天数：
+
+```json
+{
+  "start_date": "2026-09-07",
+  "end_date": "2026-09-09"
+}
+```
+
+响应显示 `REQ-F-011` 要求的确认信息，并返回短期有效的 `confirmation_token`。
+
+最终创建继续使用上位式样 `API-004`：
+
+```text
+POST /api/me/leave-requests
+Idempotency-Key: caller-generated unique value
+```
+
+```json
+{
+  "confirmation_token": "...",
+  "confirmed": true
+}
+```
+
+- `confirmed` 不为 `true` 时不得创建记录。
+- 确认令牌必须属于当前 `CurrentUser`，不得用于其他用户。
+- `Idempotency-Key` 在同一用户范围内唯一。
+- 同一 key + 同一确认操作重复调用时返回同一个已创建结果，不再次扣减余额。
+- 同一 key 对应不同确认操作时返回 Idempotency Conflict。
+
+### 5.3 v1 规则计算
+
+以下是原始式样未锁定、为实现 v1 固化的 Phase 4 Decision：
+
+- 只支持整天申请，半天申请 Pending。
+- `start_date` 必须不晚于 `end_date`。
+- 申请天数为日期区间内周一至周五的天数；法定节假日表 Pending。
+- 申请区间必须至少包含一个工作日。
+- 申请天数大于 `3` 时 `approval_required = true`。
+- PREPARE 和最终确认时均检查余额是否充足。
+- 与现有 `PENDING_APPROVAL` 或 `SUBMITTED` 申请日期重叠时拒绝。
+- v1 在创建申请时立即预留（扣减）余额，避免多个未审批申请超额占用。
+- 审批、拒绝、取消以及取消后的余额释放不在当前切片范围。
+
+### 5.4 状态与数据模型
+
+`PendingLeaveAction`：
+
+- `confirmation_token`：Primary Key，不可猜测随机值。
+- `user_id`、`start_date`、`end_date`、`requested_days`。
+- `current_balance`、`remaining_after_request`、`approval_required`：Prepare snapshot。
+- `status`：`WAITING_CONFIRMATION` 或 `EXECUTED`。
+- `expires_at`、`created_at`、可选 `executed_request_id`。
+
+`LeaveRequest`：
+
+- `request_id`：Primary Key。
+- `user_id`：当前认证用户。
+- `start_date`、`end_date`、`requested_days`。
+- `status`：`PENDING_APPROVAL` 或 `SUBMITTED`。
+- `approval_required`。
+- `idempotency_key`：与 `user_id` 组成 UNIQUE。
+- `confirmation_token`：与准备操作关联。
+- `created_at`。
+
+关系：`User 1:N LeaveRequest`。
+
+### 5.5 Final Revalidation 与 Transaction
+
+确认请求进入事务后依次执行：
+
+```text
+1. 按 user_id + idempotency_key 查询既有结果
+2. 校验 confirmation token、用户、状态和有效期
+3. 重新计算工作日天数与审批要求
+4. 重新查询当前余额
+5. 重新检查日期重叠和余额
+6. 使用条件 UPDATE 原子预留余额
+7. INSERT LeaveRequest
+8. PendingLeaveAction -> EXECUTED
+9. COMMIT
+```
+
+任何步骤失败都 ROLLBACK，不得出现“余额已扣但申请不存在”或“申请存在但余额未扣”。只有 COMMIT 成功后返回成功。
+
+### 5.6 Idempotency
+
+- 幂等键由调用方生成，通过 `Idempotency-Key` Header 传入。
+- Business DB 使用 `UNIQUE(user_id, idempotency_key)` 作为最终防线。
+- 重试首先查询已创建记录；匹配同一 `confirmation_token` 时直接返回该记录。
+- 已存在 key 但 token 不同视为冲突，不能返回错误操作的结果。
+- 幂等命中不再次执行 Final Revalidation、余额预留或 INSERT。
+
+### 5.7 测试矩阵
+
+| Test Case ID | 层级 | 场景 | 预期结果 |
+|---|---|---|---|
+| `TC-SVC-WRITE-001` | Service Unit | Prepare 有效日期和足够余额 | 返回完整确认信息并持久化 WAITING token |
+| `TC-SVC-WRITE-002` | Service Unit | 日期无效、无工作日或余额不足 | 不生成确认操作 |
+| `TC-SVC-WRITE-003` | Service Unit | Confirm 后状态已变化 | Final Revalidation 拒绝且无部分写入 |
+| `TC-SVC-WRITE-004` | Service Unit | 明确确认且状态仍有效 | 创建申请并预留余额 |
+| `TC-SVC-WRITE-005` | Service Unit | 同一 idempotency key 重试 | 返回同一申请，余额只扣一次 |
+| `TC-SVC-WRITE-006` | Service Unit | 同一 key 对应不同 token | Idempotency Conflict |
+| `TC-SVC-WRITE-007` | Service Unit | 并发请求在 UNIQUE 约束竞争 | 失败事务回滚后重新读取并返回同一结果 |
+| `TC-REP-WRITE-001` | Repository Integration | 成功事务 | 余额、申请和 pending 状态同时提交 |
+| `TC-REP-WRITE-002` | Repository Integration | 事务中发生异常 | 所有变更回滚 |
+| `TC-API-WRITE-001` | API | Prepare | HTTP 200 与确认预览 |
+| `TC-API-WRITE-002` | API | Confirm + Idempotency-Key | HTTP 201；重试返回同一结果 |
+| `TC-API-WRITE-003` | API | 未明确确认或缺少 Idempotency-Key | 不创建申请 |
+| `TC-E2E-WRITE-001` | End-to-End | Prepare 后相同 Confirm 重试两次 | 同一结果、单一申请、余额只预留一次 |
+| `TC-TOOL-WRITE-001` | Tool Unit | Agent Tool Prepare/Confirm | 完整转发给同一 Service，不复制业务规则 |
+
+`CreateLeaveRequestTool` 已实现并可由依赖组装入口提供。当前确定性 Chat Router 不从普通自然语言直接触发写操作；在结构化日期、pending state 和明确确认的 Agent 会话状态接入前，保持专用 API 为唯一执行入口，避免误触发。
+
+---
+
+## 6. 设计决定记录 / Decision Log
 
 | Decision ID | 决定 | 来源 | Status |
 |---|---|---|---|
@@ -417,10 +557,16 @@ Authentication: Required
 | DD-015 | 第一版先使用可替换的 Vector Repository 与 Answer Generator 接口；真实 Chroma、Embedding 和 LLM Provider 仍为 Pending | Phase 4 Decision | Confirmed |
 | DD-016 | `POST /api/chat` 返回统一只读 Chat Response；Agent 只选择 Tool，Tool 复用既有 Service | Original Specification + Phase 4 Decision | Confirmed |
 | DD-017 | 当前 AgentRouter 使用确定性关键词路由，不冒充 LLM Agent；未来替换分类器时保持 Tool 和安全边界 | Phase 4 Decision | Confirmed |
+| DD-018 | Prepare 使用辅助端点生成短期 confirmation token；API-004 只在 `confirmed=true` 后执行写入 | Original Specification + Phase 4 Decision | Confirmed |
+| DD-019 | v1 按周一至周五计算整天申请，超过 3 个工作日需要审批，法定节假日和半天仍为 Pending | Phase 4 Decision | Confirmed |
+| DD-020 | 确认时在同一事务内 Final Revalidation、条件更新余额、创建申请和消费 token | Original Specification + Phase 4 Decision | Confirmed |
+| DD-021 | v1 创建申请时立即预留余额；取消释放流程不在当前切片范围 | Phase 4 Decision | Confirmed |
+| DD-022 | Idempotency 使用调用方 Header 与 `UNIQUE(user_id, idempotency_key)`；同 key 同操作返回原结果，不同操作冲突 | Phase 4 Decision | Confirmed |
+| DD-023 | `CreateLeaveRequestTool` 复用同一写入 Service；普通 Chat 暂不直接触发写操作，直到结构化会话确认状态接入 | Phase 4 Decision | Confirmed |
 
 ---
 
-## 6. 待确认事项 / Pending Detailed Design
+## 7. 待确认事项 / Pending Detailed Design
 
 以下事项尚未正式确定，不得擅自标记为 Confirmed：
 
@@ -434,10 +580,13 @@ Authentication: Required
 - Semantic Retrieval 的生产阈值与校准数据。
 - Document 更新到 Vector Index 的同步方式（`OI-004`）。
 - OCR 范围（`OI-001`）和大规模 Excel 阈值（`OI-005`）。
+- 半天申请、公司节假日表和跨年度处理。
+- 审批、拒绝、取消和余额释放流程。
+- confirmation token 的生产环境加密/签名与清理策略。
 
 ---
 
-## 7. Traceability / 追踪关系
+## 8. Traceability / 追踪关系
 
 ```text
 REQ-F-005 / REQ-F-016
@@ -449,6 +598,16 @@ REQ-F-005 / REQ-F-016
 -> TC-SVC-LEAVE-001..003
 -> TC-API-LEAVE-001..003
 -> TC-REP-LEAVE-001..002
+```
+
+```text
+REQ-F-007..015
+-> Project3_Basic_Design_v0.1.docx (§4.3, §5, §7, §12)
+-> FN-LEAVE-002 / API-004
+-> docs/03_detailed_design.md §5
+-> LeaveRequest Application Code
+-> TC-SVC-WRITE-001..007 / TC-REP-WRITE-001..002 / TC-API-WRITE-001..003
+-> TC-E2E-WRITE-001 / TC-TOOL-WRITE-001
 ```
 
 ```text

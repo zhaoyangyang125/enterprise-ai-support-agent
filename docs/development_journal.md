@@ -182,8 +182,69 @@ POST /api/chat + CurrentUser
 - 权限：`U001` explicit read
 - 本地 Chunk：国内出差住宿费上限，第 3 页。
 
+### Git
+
+- Local commit：`9e1a513 feat: connect chat agent to read tools`
+
+---
+
+## 2026-09-01 — Milestone 4: Safe Leave Request
+
+### 功能
+
+实现 `REQ-F-007～015` 的两阶段年假申请：Prepare 显示确认信息，Confirm 后再验证并在单一事务中预留余额、创建申请、消费 token，同时支持幂等重试。
+
+### 调用链
+
+```text
+Prepare API
+-> CurrentUser + dates
+-> LeaveRequestService.prepare
+-> balance / overlap validation
+-> PendingLeaveAction(WAITING_CONFIRMATION)
+
+Confirm API + Idempotency-Key
+-> explicit confirmed=true
+-> transaction
+-> idempotency lookup
+-> token/user/expiry validation
+-> final balance/rule/overlap revalidation
+-> conditional balance reservation
+-> LeaveRequest INSERT
+-> token EXECUTED
+-> COMMIT
+```
+
+### v1 实现决定
+
+- 只支持整天；计算周一至周五，暂不处理法定节假日。
+- 超过 3 个工作日需要审批。
+- 申请创建时立即预留余额，避免并发未审批申请超额。
+- `Idempotency-Key` 在用户范围内唯一。
+- 同 key + 同 token 重试返回同一结果；同 key + 不同 token 返回冲突。
+- 普通自然语言 Chat 暂不直接执行写操作；`CreateLeaveRequestTool` 已实现，但要等结构化会话状态接入。
+
+### 验证
+
+- 9 个 Service tests：Prepare、日期/余额错误、Final Revalidation、成功、幂等、冲突和并发 UNIQUE 恢复。
+- 2 个 Repository integration tests：真实事务提交与 INSERT 后故障回滚。
+- 4 个 API tests：预览、HTTP 201、未确认、缺少幂等键。
+- 1 个 End-to-End test：真实 HTTP Prepare/Confirm/Retry，数据库一条申请、余额只扣一次。
+- 1 个 Tool test：两个阶段均转发到同一个安全 Service。
+- 项目全量：41 passed。
+
+### 故障注入结果
+
+测试在余额 UPDATE 和 LeaveRequest INSERT 后主动抛出异常。事务回滚后：余额仍为 8.0、申请记录不存在、PendingLeaveAction 仍为 `WAITING_CONFIRMATION`。这证明不会出现部分成功。
+
+### 面试要点
+
+- Confirmation 证明用户意愿，Final Revalidation 证明当前状态仍允许，两者不能互相替代。
+- Transaction 防止部分成功，Idempotency 防止重复成功，解决的是不同问题。
+- 原子条件 UPDATE 是余额并发安全的最终检查，不能只依赖 Prepare 时看到的余额。
+
 ---
 
 ## Next Milestone
 
-文档 Ingestion 与真实可替换 Vector DB adapter；随后实现安全年假申请写操作。
+Document Ingestion、可替换 Vector DB adapter、Docker 和最终验收材料。

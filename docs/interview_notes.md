@@ -177,6 +177,26 @@ Source Citation は LLM に自由生成させません。検索された Chunk �
 
 ただし、AgentはIntentを分類してToolを選択し、Toolは既存のServiceを再利用する、という責務分担は実装済みです。今後Intent ClassifierをLLMベースに変更しても、Authorization、Service、Repositoryの境界は変更しない設計です。
 
+### 7.12 「安全な休暇申請をどのように実装しましたか」
+
+休暇申請は、PrepareとConfirmの二段階に分けました。
+
+Prepareでは、対象日から営業日数を計算し、現在の残日数、申請後の残日数、上長承認の要否を表示して、短時間だけ有効な確認Tokenを発行します。この時点ではまだ申請を作成しません。
+
+ユーザーが明示的に確認した後、Confirm処理では、残日数、日付の重複、会社ルール、Tokenの所有者と有効期限を再検証します。その後、残日数の予約、LeaveRequestの作成、Tokenの消費を一つのTransactionで実行します。
+
+### 7.13 「ConfirmationとFinal Revalidationの違いは何ですか」
+
+Confirmationは「ユーザーがこの内容で実行したい」という意思を確認するものです。一方、Final Revalidationは「現在のシステム状態でも実行可能か」を確認するものです。
+
+確認画面を表示した後に、別の申請によって残日数が変わる可能性があります。そのため、ユーザーが確認済みでも、書き込み直前に残日数や重複をもう一度確認する必要があります。
+
+### 7.14 「TransactionとIdempotencyの違いは何ですか」
+
+Transactionは、残日数だけ減って申請が作成されない、という部分成功を防ぎます。
+
+Idempotencyは、通信Retryや二重クリックによって、同じ申請が二回成功することを防ぎます。同じユーザーとIdempotency-Keyの結果を保存し、同じ操作の再実行では既存結果を返すため、残日数も二回減りません。
+
 ## 8. 日语关键词与读法
 
 | 日语 | 读法 | 中文 |

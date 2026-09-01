@@ -74,6 +74,39 @@ You can also call `POST /api/chat` with `X-User-Id: U001`:
 
 The local seed grants `U001` explicit read access to the active travel-policy version. A leave-balance message such as `我的剩余年假是多少？` is routed to the business-data tool instead.
 
+## Safe Leave Request
+
+First prepare a request; the server calculates working days and current/remaining balance:
+
+```text
+POST /api/me/leave-requests/prepare
+X-User-Id: U001
+```
+
+```json
+{
+  "start_date": "2026-09-07",
+  "end_date": "2026-09-09"
+}
+```
+
+After showing the returned preview to the user, submit explicit confirmation with a caller-generated idempotency key:
+
+```text
+POST /api/me/leave-requests
+X-User-Id: U001
+Idempotency-Key: request-20260907-U001-001
+```
+
+```json
+{
+  "confirmation_token": "value returned by prepare",
+  "confirmed": true
+}
+```
+
+Confirmation performs final revalidation, atomic balance reservation, request creation, and token consumption in one transaction. Retrying the same operation returns the same request without a second deduction.
+
 ## Tests
 
 ```powershell
@@ -83,6 +116,7 @@ python -m pytest -q
 - Service unit tests cover normal, zero, and missing balances.
 - API tests cover HTTP 200, HTTP 404, and missing authentication context.
 - Repository integration tests run against isolated in-memory SQLite.
+- Safe-write tests include forced transaction rollback and an end-to-end idempotent retry.
 
 ## Documents
 
@@ -95,6 +129,6 @@ python -m pytest -q
 
 1. Add real document ingestion and a replaceable Chroma/embedding adapter.
 2. Replace the deterministic intent router and evidence-only answer generator with provider adapters.
-3. Expand Agent Tool Calling across safe write workflows.
+3. Add structured conversation state so Chat can invoke the existing safe write Tool without accidental execution.
 4. Safe leave-request workflow with confirmation, final revalidation, transaction, and idempotency.
 5. Docker and cloud deployment.

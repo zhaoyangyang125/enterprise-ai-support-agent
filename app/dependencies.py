@@ -10,11 +10,14 @@ from app.repositories.document_access_repository import (
     SqlAlchemyDocumentAccessRepository,
 )
 from app.repositories.leave_repository import SqlAlchemyLeaveRepository
+from app.repositories.leave_request_repository import SqlAlchemyLeaveRequestRepository
 from app.repositories.vector_repository import InMemoryVectorRepository
 from app.services.authorization_service import AuthorizationService
 from app.services.leave_service import LeaveService
+from app.services.leave_request_service import LeaveRequestService
 from app.services.rag_service import EvidenceOnlyAnswerGenerator, RagService
 from app.tools.get_leave_balance_tool import GetLeaveBalanceTool
+from app.tools.create_leave_request_tool import CreateLeaveRequestTool
 from app.tools.search_document_tool import SearchDocumentTool
 
 
@@ -25,6 +28,23 @@ def get_leave_service(
 
     repository = SqlAlchemyLeaveRepository(session)
     return LeaveService(repository)
+
+
+def get_leave_request_service(
+    session: Annotated[Session, Depends(get_db_session)],
+) -> LeaveRequestService:
+    """组装并提供事务性年假申请 Service。 / Builds and provides the transactional leave-request service."""
+
+    repository = SqlAlchemyLeaveRequestRepository(session)
+    return LeaveRequestService(repository)
+
+
+def get_create_leave_request_tool(
+    service: Annotated[LeaveRequestService, Depends(get_leave_request_service)],
+) -> CreateLeaveRequestTool:
+    """为 Agent 组装复用安全写入 Service 的申请 Tool。 / Builds the leave-request tool that reuses the safe write service for the agent."""
+
+    return CreateLeaveRequestTool(service)
 
 
 def get_rag_service(
