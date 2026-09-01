@@ -11,7 +11,7 @@
 | 项目 | 内容 |
 |---|---|
 | 文档名称 | Project 3 详细设计书 |
-| Document Version | v0.8-draft |
+| Document Version | v0.9-draft |
 | Status | Draft（草稿，尚未正式 Review） |
 | Created Date | 2026-08-24 |
 | Last Updated | 2026-09-01 |
@@ -19,7 +19,7 @@
 | Reviewed By | Pending（待审阅） |
 | Approved By | Pending（待批准） |
 | Related Phase | Phase 4 Coding |
-| Current Scope | 两条安全读取链；Chat Agent/Tool；安全年假申请写入链 |
+| Current Scope | 三条核心主链；Chat Agent/Tool；Document Ingestion 与本地 Chroma |
 | Related Requirements | `REQ-F-001`～`REQ-F-005`、`REQ-F-007`～`REQ-F-016`、`NFR-SEC-001` |
 
 ### 0.1 状态定义
@@ -56,6 +56,7 @@
 | v0.6 | 2026-09-01 | 固化 Authorized RAG Read 的检索前权限过滤、有效版本、证据阈值和 metadata citation 契约 | Original Specification + Phase 4 Decision | Draft |
 | v0.7 | 2026-09-01 | 接入 `POST /api/chat`、确定性 AgentRouter 与两个只读 Tool，并固化统一响应和测试 | Original Specification + Phase 4 Decision | Draft |
 | v0.8 | 2026-09-01 | 固化安全年假申请的 Prepare/Confirm/Revalidate/Transaction/Execute、余额预留和 Idempotency 契约 | Original Specification + Phase 4 Decision | Draft |
+| v0.9 | 2026-09-01 | 实现 PDF/Excel 解析、原本存储、跨存储处理状态、本地 Hash Embedding 与持久化 Chroma | Original Specification + Phase 4 Decision | Draft |
 
 变更历史只记录影响接口、数据模型、权限、异常处理或测试预期的重要变化；排版和错别字修正不单独增加版本。
 
@@ -73,7 +74,8 @@
 - Test Framework：pytest
 - Authentication v1：Mock Authentication Context
 - Authentication Input：`X-User-Id`
-- Vector Database：Chroma 是未来 RAG 阶段的优先考虑方向，尚未锁定为最终选型
+- Vector Database：Chroma 1.5.x（本地 `PersistentClient`）
+- Embedding v1：本地确定性 Hash Embedding，不下载模型、不调用外部 API
 
 `X-User-Id` 仅用于本地开发阶段模拟身份。Authentication Dependency 必须将认证输入转换为可信的 `current_user`，业务代码不得直接相信客户端提供的任意目标 `user_id`。
 
@@ -343,8 +345,8 @@ No Evidence 时：
 - 定义可替换的 `DocumentAccessRepository`、`VectorRepository` 和 `AnswerGenerator` 接口。
 - 使用 SQLAlchemy + SQLite 验证 Business DB 的权限与有效版本查询。
 - 使用确定性的本地 Vector Repository/Fake 验证过滤参数和业务流程。
-- 暂不接入付费 LLM、外部 Embedding API 或云服务。
-- Chroma 的最终采用、Embedding 模型、LLM Provider、分数阈值校准仍待后续决定。
+- 本地运行时已接入 Chroma PersistentClient，并使用离线、可复现的 Hash Embedding；不依赖付费 LLM、外部 Embedding API 或云服务。
+- 生产环境使用的 Embedding 模型、LLM Provider 与分数阈值校准仍待后续决定。
 
 ### 4.7 测试矩阵 / Test Matrix
 
@@ -536,7 +538,59 @@ Idempotency-Key: caller-generated unique value
 
 ---
 
-## 6. 设计决定记录 / Decision Log
+## 6. Document Ingestion 与持久化 Vector DB
+
+### 6.1 对应上位式样
+
+- `REQ-F-019`～`REQ-F-021`：上传、DocumentVersion 与旧版状态管理。
+- `FN-DOC-001`：Storage → Parse → Chunking → Embedding → Indexing。
+- Basic Design §8：Business DB、Document Storage、Vector DB 的职责分离。
+- Basic Design §9：PDF 保留 page，Excel 按 Sheet/Region/Structure/Semantic Record 处理，citation 来自 metadata。
+
+### 6.2 实现链
+
+```text
+Local PDF / Excel
+-> DocumentVersion = processing (Business DB)
+-> Original copy (Document Storage)
+-> PDF page/paragraph or Excel sheet/header/row parser
+-> IndexedChunk + stable SHA-256 chunk_id
+-> local Hash Embedding
+-> Chroma upsert(content + embedding + metadata)
+-> DocumentVersion = active
+```
+
+发生解析、存储或索引异常时，DocumentVersion 改为 `failed`，不得进入 Authorized Retrieval。原文件使用 `document_storage/{document_id}/{document_version_id}/` 保存，Chroma 使用 `chroma_data/` 本地持久化；两者均不进入 Git。
+
+### 6.3 权限与 Citation 不变量
+
+- Chroma metadata 至少保存 `document_id`、`document_version_id`、`source_name`。
+- PDF 额外保存 `page`；Excel 保存 `sheet` 和 `rows`。
+- Chroma query 的 `where` 使用 `document_version_id: {$in: allowed_ids}`，在向量查询阶段过滤。
+- Business DB 中只有 `active` 且当前用户有 user/department/role read permission 的版本才能进入允许集合。
+- Vector DB 不独立决定权限；LLM 不生成 citation 字段。
+
+### 6.4 v1 实现边界
+
+- PDF v1 只处理存在文本层的文件；OCR 仍为 `OI-001`。
+- Excel v1 展开 merged cell，并按 Sheet、Header 和数据行生成语义记录，不使用固定 500 字切割。
+- Hash Embedding 用于离线、确定性和可重复测试，不声称达到生产语义模型质量。
+- 真实 Embedding 模型和 LLM Provider 仍可通过现有 Protocol 替换。
+
+### 6.5 测试矩阵
+
+| Test Case ID | 层级 | 场景 | 预期结果 |
+|---|---|---|---|
+| `TC-PARSE-001` | Parser Unit | Excel Header、Row、Merged Cell | 保留 Sheet/Row 并恢复 Header=Value 语义 |
+| `TC-PARSE-002` | Parser Unit | PDF 多页自然段 | 保留 page 并按自然段组合 Chunk |
+| `TC-VECTOR-001` | Chroma Integration | 越权 Chunk 更相似 | Chroma where 只返回允许版本 |
+| `TC-VECTOR-002` | Chroma Integration | 重建 Repository | 从本地持久化目录重新读取索引 |
+| `TC-DOC-001` | Service Integration | Excel Ingestion 成功 | 原本存在、metadata 完整、版本 active |
+| `TC-DOC-002` | Service Integration | Vector Index 故障 | 版本 failed，不标记 active |
+
+---
+
+## 7. 设计决定记录 / Decision Log
 
 | Decision ID | 决定 | 来源 | Status |
 |---|---|---|---|
@@ -547,14 +601,14 @@ Idempotency-Key: caller-generated unique value
 | DD-005 | `unit = "day"` 只属于 Response Schema，不存入 DB | Phase 4 Decision | Confirmed |
 | DD-006 | 无余额记录与余额为 0 不同；无记录最终映射为 HTTP 404 | Phase 4 Decision | Confirmed |
 | DD-007 | Service 通过 Repository 访问数据库，不直接使用 SQLAlchemy Session | Original Specification | Confirmed |
-| DD-008 | Chroma 是未来 RAG 阶段的优先方向，但最终 Vector DB 尚未锁定 | Phase 4 Decision | Confirmed |
+| DD-008 | Chroma 曾作为 RAG 阶段的优先候选；该初期决定已由 DD-024 的本地 Chroma 实装决定取代 | Phase 4 Decision | Superseded |
 | DD-009 | Service 使用不依赖 FastAPI、且不包含 HTTP 状态码的 `LeaveBalanceNotFoundError` 表达当前用户余额记录不存在 | Phase 4 Decision | Confirmed |
 | DD-010 | API 在 `app/api/error_handlers.py` 将该业务异常映射为 HTTP 404；未来 Agent Tool 进行独立映射 | Phase 4 Decision | Confirmed |
 | DD-011 | RAG 先从 Business DB 取得可读且有效的 `document_version_id`，再将允许集合传给 Vector Repository | Original Specification + Phase 4 Decision | Confirmed |
 | DD-012 | Vector Repository 必须在检索查询阶段应用允许版本过滤；不得先取回越权 Chunk 再由 Service 丢弃 | Original Specification | Confirmed |
 | DD-013 | Source Citation 由检索结果 metadata 组装，不允许回答生成器自行编造 | Original Specification + Phase 4 Decision | Confirmed |
 | DD-014 | 无结果或最高相关度低于阈值时返回 No Evidence，不调用回答生成器，并与 System Error 区分 | Original Specification + Phase 4 Decision | Confirmed |
-| DD-015 | 第一版先使用可替换的 Vector Repository 与 Answer Generator 接口；真实 Chroma、Embedding 和 LLM Provider 仍为 Pending | Phase 4 Decision | Confirmed |
+| DD-015 | 第一版先建立可替换的 Vector Repository 与 Answer Generator 接口；Chroma 已接入，生产级 Embedding 与 LLM Provider 仍为 Pending | Phase 4 Decision | Confirmed |
 | DD-016 | `POST /api/chat` 返回统一只读 Chat Response；Agent 只选择 Tool，Tool 复用既有 Service | Original Specification + Phase 4 Decision | Confirmed |
 | DD-017 | 当前 AgentRouter 使用确定性关键词路由，不冒充 LLM Agent；未来替换分类器时保持 Tool 和安全边界 | Phase 4 Decision | Confirmed |
 | DD-018 | Prepare 使用辅助端点生成短期 confirmation token；API-004 只在 `confirmed=true` 后执行写入 | Original Specification + Phase 4 Decision | Confirmed |
@@ -563,10 +617,13 @@ Idempotency-Key: caller-generated unique value
 | DD-021 | v1 创建申请时立即预留余额；取消释放流程不在当前切片范围 | Phase 4 Decision | Confirmed |
 | DD-022 | Idempotency 使用调用方 Header 与 `UNIQUE(user_id, idempotency_key)`；同 key 同操作返回原结果，不同操作冲突 | Phase 4 Decision | Confirmed |
 | DD-023 | `CreateLeaveRequestTool` 复用同一写入 Service；普通 Chat 暂不直接触发写操作，直到结构化会话确认状态接入 | Phase 4 Decision | Confirmed |
+| DD-024 | v1 使用 Chroma 1.5.x PersistentClient，本地路径 `chroma_data/`，权限版本集合进入 query where | Phase 4 Decision + Official Chroma API | Confirmed |
+| DD-025 | v1 使用确定性 Hash Embedding 保持完全离线；生产 Embedding 通过 Protocol 替换 | Phase 4 Decision | Confirmed |
+| DD-026 | 多存储处理以 DocumentVersion `processing -> active/failed` 表达最终状态，不把未完成索引暴露给 Retrieval | Original Specification + Phase 4 Decision | Confirmed |
 
 ---
 
-## 7. 待确认事项 / Pending Detailed Design
+## 8. 待确认事项 / Pending Detailed Design
 
 以下事项尚未正式确定，不得擅自标记为 Confirmed：
 
@@ -575,7 +632,6 @@ Idempotency-Key: caller-generated unique value
 - `updated_at` 的自动维护策略。
 - SQLite 以外环境的数据库配置。
 - 正式 Authentication / JWT 方案。
-- RAG 阶段的 Vector DB 最终选择。
 - Embedding 模型与 LLM Provider。
 - Semantic Retrieval 的生产阈值与校准数据。
 - Document 更新到 Vector Index 的同步方式（`OI-004`）。
@@ -586,7 +642,7 @@ Idempotency-Key: caller-generated unique value
 
 ---
 
-## 8. Traceability / 追踪关系
+## 9. Traceability / 追踪关系
 
 ```text
 REQ-F-005 / REQ-F-016
@@ -598,6 +654,14 @@ REQ-F-005 / REQ-F-016
 -> TC-SVC-LEAVE-001..003
 -> TC-API-LEAVE-001..003
 -> TC-REP-LEAVE-001..002
+```
+
+```text
+REQ-F-019..021 / FN-DOC-001
+-> Project3_Basic_Design_v0.1.docx (§8, §9)
+-> docs/03_detailed_design.md §6
+-> DocumentService / PDF-Excel Parser / Document Storage / Chroma
+-> TC-PARSE-001..002 / TC-VECTOR-001..002 / TC-DOC-001..002
 ```
 
 ```text

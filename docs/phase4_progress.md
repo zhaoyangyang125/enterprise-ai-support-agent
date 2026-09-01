@@ -4,7 +4,7 @@ Last updated: 2026-09-01
 
 ## Current Scope
 
-Vertical slice 4: safe leave-request write workflow.
+Milestone 5: Document Ingestion and persistent local Chroma.
 
 ## Completed
 
@@ -92,6 +92,13 @@ Vertical slice 4: safe leave-request write workflow.
 - Added CreateLeaveRequestTool as a thin bridge to the same safe write service.
 - Kept ordinary natural-language Chat from triggering writes until structured
   conversation state is implemented.
+- Saved safe leave requests in local commit `ea1dbb7`.
+- Added text-PDF and structure-aware Excel parsers, local original-document
+  storage, stable Chunk IDs, and citation metadata.
+- Added DocumentVersion processing/active/failed state around cross-store work.
+- Added deterministic local Hash Embedding and Chroma 1.5 PersistentClient.
+- Switched the assembled RAG runtime from in-memory demo retrieval to local
+  persistent Chroma; seed now upserts the demo Chunk.
 
 ## Modified Files
 
@@ -133,6 +140,15 @@ Vertical slice 4: safe leave-request write workflow.
 - `tests/api/test_leave_request_api.py`
 - `tests/e2e/test_leave_request_flow.py`
 - `tests/tools/test_create_leave_request_tool.py`
+- `app/document_processing/parsers.py`
+- `app/document_processing/storage.py`
+- `app/repositories/document_repository.py`
+- `app/schemas/document.py`
+- `app/services/document_service.py`
+- `app/services/embedding_service.py`
+- `tests/document_processing/test_excel_parser.py`
+- `tests/repositories/test_chroma_vector_repository.py`
+- `tests/services/test_document_service.py`
 
 ## Verification Results
 
@@ -173,6 +189,8 @@ Vertical slice 4: safe leave-request write workflow.
   state all roll back.
 - A real HTTP Prepare/Confirm/retry flow proved one request row and one balance
   deduction.
+- Document parser, Chroma persistence/filtering, and cross-store status tests
+  are included in the final full-suite result: 47 tests passed.
 
 ## Git Status
 
@@ -180,22 +198,22 @@ Vertical slice 4: safe leave-request write workflow.
 - Vertical slice 1 is stored in local commit `9acf307`.
 - Authorized RAG core is stored in local commit `8b6d8fc`.
 - Chat/Agent/Tool integration is stored in local commit `9e1a513`.
-- Current safe-write changes are modified/untracked and not yet committed.
+- Safe leave requests are stored in local commit `ea1dbb7`.
+- Document Ingestion/Chroma changes are verified and stored in this local
+  milestone commit.
 - No `git push` has been executed.
 - `practice/` and `tests/services/test_leave_availability_service.py` are
   learning-only and must remain outside the first formal feature commit.
 
 ## Next Step
 
-Selectively commit the formal safe-write files, then begin document ingestion,
-the replaceable vector adapter, and Docker packaging.
+Run the final full suite, selectively commit only the verified ingestion files,
+then stop feature expansion. Resume with Docker and delivery audit.
 
 ## Handoff Summary
 
-The two read chains and local Chat/Agent/Tool integration are saved in three
-local commits. The safe leave-request chain now implements Prepare, explicit
-Confirm, final revalidation, one transaction, atomic balance reservation, and
-idempotency. The full suite passes 41 tests, including rollback fault injection
-and a real HTTP idempotent retry. Document ingestion, a production vector
-adapter, Docker, and final delivery validation remain. No push has been
-performed, and learning-only files remain outside formal work.
+The two read chains, Chat/Agent/Tool, and safe write chain are saved in four
+local commits. Document Ingestion and persistent local Chroma are implemented
+and awaiting one final full-suite verification and local commit. Docker, Admin
+Upload API, production Embedding/LLM, OCR, and final delivery validation remain.
+No push has been performed, and learning-only files remain outside formal work.

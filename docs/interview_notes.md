@@ -197,6 +197,14 @@ Transactionは、残日数だけ減って申請が作成されない、という
 
 Idempotencyは、通信Retryや二重クリックによって、同じ申請が二回成功することを防ぎます。同じユーザーとIdempotency-Keyの結果を保存し、同じ操作の再実行では既存結果を返すため、残日数も二回減りません。
 
+### 7.15 「文書をどのように取り込みますか」
+
+原本はDocument Storage、文書Versionと処理状態はBusiness Database、Chunk・Embedding・Source MetadataはChromaに保存します。
+
+PDFではPage情報を保持し、ExcelではSheet、Header、Row、Merged Cellの構造を復元してからSemantic Recordを作成します。固定文字数だけで分割する方式にはしていません。
+
+処理開始時にDocumentVersionを`processing`にし、原本保存、解析、Embedding、Chroma Indexingがすべて成功した後だけ`active`にします。途中で失敗した場合は`failed`にするため、不完全なVersionは検索対象になりません。
+
 ## 8. 日语关键词与读法
 
 | 日语 | 读法 | 中文 |

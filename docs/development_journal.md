@@ -247,4 +247,41 @@ Confirm API + Idempotency-Key
 
 ## Next Milestone
 
-Document Ingestion、可替换 Vector DB adapter、Docker 和最终验收材料。
+Docker 和最终验收材料。
+
+---
+
+## 2026-09-01 — Milestone 5: Document Ingestion / Chroma
+
+### 完成内容
+
+- PDF：保留 page，按自然段组合 Chunk；v1 不含 OCR。
+- Excel：展开 merged cell，按 Sheet、Header、Row 生成语义记录。
+- 原文件复制到按 document/version 分层的 Document Storage。
+- Business DB 使用 `processing -> active/failed` 记录跨存储处理结果。
+- Chunk 使用稳定 SHA-256 ID，并保留 citation metadata。
+- 本地 Hash Embedding 完全离线且可重复。
+- Chroma 1.5.x `PersistentClient` 保存本地索引，并在 query where 中应用 allowed version IDs。
+- 运行时 RAG 已从 InMemory Repository 切换到持久化 Chroma；seed 同时写入演示 Chunk。
+
+### 验证
+
+- Excel structure/merged-cell parser test。
+- PDF page/paragraph parser test。
+- Chroma retrieval-time authorization filter test。
+- Chroma restart persistence test。
+- DocumentService success/active test。
+- Vector failure/failed-state test。
+- 最终全量测试：47 passed（另有 1 条第三方 Starlette TestClient 弃用警告）。
+
+### 诚实边界
+
+- Hash Embedding 是本地工程演示，不是生产语义模型。
+- Scanned PDF OCR、复杂 Excel region detection 阈值和异步任务队列仍未完成。
+- 当前完成的是本地文件 Ingestion Service；Admin Upload API 尚未实现。
+
+---
+
+## Next Milestone
+
+Docker、最终全量运行验证、文档一致性审计和面试交付包。

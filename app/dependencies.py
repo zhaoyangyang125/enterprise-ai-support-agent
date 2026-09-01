@@ -1,18 +1,20 @@
 from typing import Annotated
+from functools import lru_cache
+from pathlib import Path
 
 from fastapi import Depends
 from sqlalchemy.orm import Session
 
 from app.agent.router import AgentRouter
 from app.db.session import get_db_session
-from app.demo_data import DEMO_DOCUMENT_CHUNKS
 from app.repositories.document_access_repository import (
     SqlAlchemyDocumentAccessRepository,
 )
 from app.repositories.leave_repository import SqlAlchemyLeaveRepository
 from app.repositories.leave_request_repository import SqlAlchemyLeaveRequestRepository
-from app.repositories.vector_repository import InMemoryVectorRepository
+from app.repositories.vector_repository import ChromaVectorRepository
 from app.services.authorization_service import AuthorizationService
+from app.services.embedding_service import HashEmbeddingProvider
 from app.services.leave_service import LeaveService
 from app.services.leave_request_service import LeaveRequestService
 from app.services.rag_service import EvidenceOnlyAnswerGenerator, RagService
@@ -47,22 +49,34 @@ def get_create_leave_request_tool(
     return CreateLeaveRequestTool(service)
 
 
+@lru_cache
+def get_vector_repository() -> ChromaVectorRepository:
+    """创建并缓存本地持久化 Chroma Repository。 / Creates and caches the local persistent Chroma repository."""
+
+    return ChromaVectorRepository.persistent(
+        path=Path("chroma_data"),
+        collection_name="enterprise_documents",
+        embedding_provider=HashEmbeddingProvider(),
+    )
+
+
 def get_rag_service(
     session: Annotated[Session, Depends(get_db_session)],
+    vector_repository: Annotated[
+        ChromaVectorRepository,
+        Depends(get_vector_repository),
+    ],
 ) -> RagService:
     """组装本地开发用的 Authorized RAG Service。 / Builds the Authorized RAG service for local development."""
 
     access_repository = SqlAlchemyDocumentAccessRepository(session)
     authorization_service = AuthorizationService(access_repository)
-    vector_repository = InMemoryVectorRepository(DEMO_DOCUMENT_CHUNKS)
     answer_generator = EvidenceOnlyAnswerGenerator()
     return RagService(
         authorization_service=authorization_service,
         vector_repository=vector_repository,
         answer_generator=answer_generator,
     )
-
-
 def get_agent_router(
     leave_service: Annotated[LeaveService, Depends(get_leave_service)],
     rag_service: Annotated[RagService, Depends(get_rag_service)],

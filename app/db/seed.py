@@ -2,6 +2,8 @@ from datetime import UTC, datetime
 
 from sqlalchemy import select
 
+from app.dependencies import get_vector_repository
+from app.demo_data import DEMO_DOCUMENT_CHUNKS
 from app.db.models import (
     Document,
     DocumentPermission,
@@ -85,6 +87,8 @@ def seed_development_data() -> None:
 
         session.commit()
 
+    get_vector_repository().upsert_chunks(DEMO_DOCUMENT_CHUNKS)
+
 
 if __name__ == "__main__":
     seed_development_data()
@@ -92,3 +96,4 @@ if __name__ == "__main__":
         "Seeded development leave balance: "
         f"{DEVELOPMENT_USER_ID} = {DEVELOPMENT_REMAINING_DAYS} day(s)"
     )
+    print("Seeded local Chroma document chunks for U001.")

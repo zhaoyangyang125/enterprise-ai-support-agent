@@ -35,6 +35,8 @@ The API does not accept a target `user_id`. The query target always comes from t
 - SQLAlchemy 2.x
 - SQLite for local development
 - pytest
+- Chroma 1.5 local persistent vector database
+- pypdf and openpyxl for local document parsing
 
 ## Authorized RAG Core
 
@@ -50,7 +52,7 @@ CurrentUser + Query
 -> metadata-based Source Citation
 ```
 
-The local implementation does not require a paid LLM or embedding API. Chroma, the production embedding model, and the LLM provider remain replaceable pending decisions. Chat/Agent/Tool integration is the next milestone.
+The local implementation does not require a paid LLM or embedding API. The runtime uses local persistent Chroma with deterministic Hash Embedding. The Hash implementation is intentionally offline and replaceable; it is not presented as a production-quality semantic model.
 
 ## Local Setup (PowerShell)
 
@@ -127,8 +129,9 @@ python -m pytest -q
 
 ## Roadmap
 
-1. Add real document ingestion and a replaceable Chroma/embedding adapter.
-2. Replace the deterministic intent router and evidence-only answer generator with provider adapters.
-3. Add structured conversation state so Chat can invoke the existing safe write Tool without accidental execution.
+1. Add Docker and perform the final local delivery audit.
+2. Add Admin Upload API and background processing state.
+3. Replace Hash Embedding and the evidence-only answer generator with production provider adapters.
+4. Add structured conversation state so Chat can invoke the existing safe write Tool without accidental execution.
 4. Safe leave-request workflow with confirmation, final revalidation, transaction, and idempotency.
 5. Docker and cloud deployment.
