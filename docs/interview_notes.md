@@ -78,13 +78,13 @@ Repository Integration Test
    - 统一组装 Session、Repository 和 Service，并允许测试时替换依赖。
 5. Repository 返回什么？
    - 找到时返回 `LeaveBalance` 模型对象，找不到时返回 `None`，不决定 HTTP 状态码。
-6. 下一阶段的安全重点是什么？
-   - RAG 权限过滤必须在 Retrieval 前执行；引用必须来自 metadata；证据不足时不能让 LLM 猜测公司规则。
+6. RAG 的安全核心是什么？
+   - RAG 权限过滤必须在 Retrieval 前执行；引用必须来自 metadata；证据不足时不能让 LLM 猜测公司规则。该核心链已实现并通过测试，Chat/Agent/Tool 接入仍是下一阶段。
 
 ## 6. 当前诚实边界
 
 - 第一条 Authorized DB Read 已完成并通过测试。
-- Authorized RAG、Agent Tool Calling 和安全写操作仍在 Roadmap 中。
+- Authorized RAG Core 已完成；Chat/Agent/Tool 接入、真实文档 ingestion、真实 Vector DB/LLM 仍在 Roadmap 中。
 - `X-User-Id` 是开发阶段模拟认证，不是生产认证方案。
 - SQLite 是本地开发数据库，未来部署环境可以通过 Repository/ORM 边界迁移到 PostgreSQL。
 
@@ -142,12 +142,30 @@ API テストでは FastAPI の dependency override を使用し、HTTP 200、�
 
 Repository の結合テストでは、インメモリの SQLite を使用して、実際の SQLAlchemy クエリで対象データを取得できることと、データがない場合に `None` が返ることを確認しています。
 
-### 7.7 面试中的使用顺序
+### 7.7 「RAGで権限チェックを検索前に行う理由は何ですか」
+
+検索してから結果を除外する方法では遅すぎます。権限のない文書の Chunk が、すでにアプリケーションのメモリや LLM の Context に入る可能性があるためです。
+
+このプロジェクトでは、まず Business Database から、現在のユーザーが読み取り可能で、かつ有効な `document_version_id` の集合を取得します。その集合を Vector Repository に渡し、Repository が検索クエリの段階でフィルタします。LLM は権限の ALLOW/DENY を判断しません。
+
+### 7.8 「Source Citationはどのように作成しますか」
+
+Source Citation は LLM に自由生成させません。検索された Chunk の metadata に保存されている `document_id`、`document_version_id`、ファイル名、ページ、Section、Sheet、行番号などからプログラムで作成します。
+
+これにより、回答の根拠を追跡でき、存在しない出典をモデルが作るリスクを減らします。
+
+### 7.9 「十分な根拠がない場合はどうしますか」
+
+読み取り可能な文書Versionがない場合、検索結果がない場合、または関連度が閾値より低い場合は、No Evidence として扱います。
+
+この場合、Answer Generator を呼び出さず、「十分な資料を確認できない」と返します。これは System Error とは別の正常な業務・品質結果です。
+
+### 7.10 面试中的使用顺序
 
 ```text
 第一步：先说 7.2 短版
 第二步：等待面试官追问
-第三步：根据问题选择 7.3～7.6
+第三步：根据问题选择 7.3～7.9
 第四步：不知道或尚未完成的内容，如实说明 Roadmap
 ```
 
@@ -171,6 +189,11 @@ Repository の結合テストでは、インメモリの SQLite を使用して�
 | 呼び出す | よびだす | 调用 |
 | 差し替える | さしかえる | 替换 |
 | 冪等性 | べきとうせい | 幂等性 |
+| 検索前 | けんさくまえ | 检索前 |
+| 根拠 | こんきょ | 依据、证据 |
+| 引用元 | いんようもと | 引用来源 |
+| 有効版 | ゆうこうばん | 有效版本 |
+| 権限範囲 | けんげんはんい | 权限范围 |
 
 ## 9. 背诵原则
 

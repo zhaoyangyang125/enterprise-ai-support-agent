@@ -72,10 +72,72 @@ X-User-Id
 - Branch：`feature/phase4-core-backend`
 - Formal files 已选择性暂存。
 - Learning-only `practice/` 未暂存。
-- Planned commit：`feat: implement authenticated leave balance vertical slice`
+- Local commit：`9acf307 feat: implement authenticated leave balance vertical slice`
+
+---
+
+## 2026-09-01 — Milestone 2: Authorized RAG Core
+
+### 功能
+
+在接入 Chat API、Agent 和真实 LLM 前，先实现并验证 RAG 最关键的安全核心：检索前权限过滤、有效版本过滤、证据阈值和 metadata citation。
+
+### 关联式样
+
+- `REQ-F-001`～`REQ-F-004`：权限内文档问答、有效文档、引用、无证据拒答。
+- `NFR-SEC-001`：Authorization 必须发生在 Retrieval 前。
+- `FN-RAG-001`：权限与版本过滤后的 Semantic Retrieval。
+- Permission Matrix：`company_document / read` 为 role、department、explicit permission + active version。
+
+### 当前调用链
+
+```text
+CurrentUser + Query
+-> AuthorizationService
+-> DocumentAccessRepository / Business DB
+-> allowed_document_version_ids
+-> RagService
+-> VectorRepository.search(...allowed ids...)
+-> evidence threshold
+-> AnswerGenerator
+-> metadata-based SourceCitation
+```
+
+完整上位调用链中的 `ChatController -> AgentRouter -> SearchDocumentTool` 将在后续里程碑接入。
+
+### 关键决定
+
+- Business DB 决定用户可读的有效 DocumentVersion；LLM 不参与 ALLOW/DENY。
+- Vector Repository 在 Retrieval 查询阶段应用允许版本集合，不能先取回越权内容再过滤。
+- citation 由 Chunk metadata 组装，Answer Generator 不能生成来源字段。
+- 无权限、无结果或低于阈值均返回 No Evidence，并跳过 Answer Generator。
+- 先用接口和本地确定性实现验证边界；Chroma、Embedding 和真实 LLM 仍未锁定。
+
+### 修改范围
+
+- 扩展 Mock `CurrentUser`，支持可选 department 和 role context。
+- 增加 `Document`、`DocumentVersion`、`DocumentPermission` Business DB 模型。
+- 增加 SQLAlchemy 文档访问权限 Repository。
+- 增加 Vector Repository Protocol 与本地字符 n-gram 检索实现。
+- 增加 `AuthorizationService`、`RagService`、Answer Generator Protocol。
+- 增加 RAG response、retrieved chunk 和 source citation schemas。
+
+### 验证
+
+- 4 个 RAG Service unit tests：有证据、无权限、无结果、低分。
+- 3 个 Document Access Repository integration tests：user、department/role、无权限/无效版本。
+- 1 个本地 Vector Repository test：越权内容即使更相似也不能返回。
+- 全量测试：19 passed（包含 3 个 learning-only practice tests）。
+- 已知第三方警告仍为 Starlette TestClient 弃用提示。
+
+### 面试要点
+
+- “先检索再过滤”已经太晚，因为越权内容可能已经进入应用内存或 LLM Context。
+- 权限与有效版本来自结构化 Business DB；向量库只负责允许范围内的相似度检索。
+- No Evidence 是正常 AI 质量结果，不等于系统异常。
 
 ---
 
 ## Next Milestone
 
-Authorized RAG Read：权限过滤发生在 Retrieval 前，来源引用来自 metadata，无足够证据时拒绝猜测公司规则。
+把 Authorized RAG Core 接入 `SearchDocumentTool -> AgentRouter -> POST /api/chat`，并提供本地可运行的演示数据。

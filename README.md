@@ -2,7 +2,7 @@
 
 Enterprise AI Support Agent is a Python/FastAPI project that demonstrates secure business-data access, authorized RAG, Agent Tool Calling, and safe business workflows.
 
-The current completed vertical slice lets an authenticated employee query only their own leave balance.
+The project currently contains a completed authenticated leave-balance slice and a tested Authorized RAG core.
 
 ## Current Feature
 
@@ -36,6 +36,22 @@ The API does not accept a target `user_id`. The query target always comes from t
 - SQLite for local development
 - pytest
 
+## Authorized RAG Core
+
+```text
+CurrentUser + Query
+-> AuthorizationService
+-> Business DB permission + active-version lookup
+-> allowed document-version IDs
+-> RagService
+-> retrieval-time Vector Repository filter
+-> evidence threshold
+-> Answer Generator
+-> metadata-based Source Citation
+```
+
+The local implementation does not require a paid LLM or embedding API. Chroma, the production embedding model, and the LLM provider remain replaceable pending decisions. Chat/Agent/Tool integration is the next milestone.
+
 ## Local Setup (PowerShell)
 
 ```powershell
@@ -67,8 +83,8 @@ python -m pytest -q
 
 ## Roadmap
 
-1. Authorized RAG Read with permission filtering before retrieval.
-2. Metadata-based source citation and no-evidence refusal.
+1. Connect the tested Authorized RAG core to Chat, Agent Router, and SearchDocumentTool.
+2. Add real document ingestion and a replaceable Chroma/embedding adapter.
 3. Agent Tool Calling across business DB and document search tools.
 4. Safe leave-request workflow with confirmation, final revalidation, transaction, and idempotency.
 5. Docker and cloud deployment.

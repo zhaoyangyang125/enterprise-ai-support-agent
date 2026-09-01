@@ -4,7 +4,7 @@ Last updated: 2026-09-01
 
 ## Current Scope
 
-Vertical slice 1: query the authenticated user's leave balance.
+Vertical slice 2: Authorized RAG Read core.
 
 ## Completed
 
@@ -63,6 +63,20 @@ Vertical slice 1: query the authenticated user's leave balance.
   IDs and traceability.
 - Added `README.md` and `docs/interview_notes.md` for local execution and
   interview-oriented explanation.
+- Saved vertical slice 1 in local commit `9acf307` on
+  `feature/phase4-core-backend`.
+- Audited `REQ-F-001` through `REQ-F-004`, `NFR-SEC-001`, `FN-RAG-001`, the
+  document permission matrix, and Basic Design sections 4.2, 6, 8, and 9.
+- Added Business DB models for Document, DocumentVersion, and deterministic
+  user/department/role document permissions.
+- Added a SQLAlchemy repository that returns only readable, active, and
+  effective document-version IDs.
+- Added the Authorized RAG core: AuthorizationService, retrieval-time version
+  filtering, evidence threshold, no-evidence refusal, and metadata citations.
+- Added replaceable VectorRepository and AnswerGenerator boundaries plus a
+  deterministic in-memory retrieval implementation for local development.
+- Added 8 formal tests for RAG service behavior, Business DB access scope, and
+  protection against returning a more-similar unauthorized chunk.
 
 ## Modified Files
 
@@ -86,6 +100,14 @@ Vertical slice 1: query the authenticated user's leave balance.
 - `docs/interview_notes.md`
 - `docs/03_detailed_design.md`
 - `docs/phase4_progress.md`
+- `app/repositories/document_access_repository.py`
+- `app/repositories/vector_repository.py`
+- `app/schemas/rag.py`
+- `app/services/authorization_service.py`
+- `app/services/rag_service.py`
+- `tests/services/test_rag_service.py`
+- `tests/repositories/test_document_access_repository.py`
+- `tests/repositories/test_vector_repository.py`
 
 ## Verification Results
 
@@ -110,32 +132,35 @@ Vertical slice 1: query the authenticated user's leave balance.
   SQLite without reading or modifying `business.db`.
 - A third-party Starlette TestClient deprecation warning remains; it does not
   affect the passing behavior and no speculative dependency change was made.
+- Authorized RAG core and the existing project suite: 19 tests passed.
+- Verified that no readable versions skips vector retrieval and answer
+  generation.
+- Verified that empty or below-threshold evidence skips answer generation.
+- Verified that source citations are constructed from retrieved metadata.
+- Verified that an unauthorized chunk is excluded even when it is more similar
+  to the query than the authorized chunk.
 
 ## Git Status
 
 - Current branch: `feature/phase4-core-backend`
-- The branch has no commits yet.
-- Project files are untracked.
-- No `git add`, `git commit`, or `git push` has been executed.
+- Vertical slice 1 is stored in local commit `9acf307`.
+- Current Authorized RAG changes are modified/untracked and not yet committed.
+- No `git push` has been executed.
 - `practice/` and `tests/services/test_leave_availability_service.py` are
   learning-only and must remain outside the first formal feature commit.
 
 ## Next Step
 
-Review the completed formal slice from an interview perspective, then use a
-selective `git add` to stage only formal source, tests, and documents. After the
-project owner understands what will be saved, create the first local commit and
-begin vertical slice 2: Authorized RAG Read with retrieval-time permission
-filtering and metadata-based source citation.
+Review and selectively commit only the formal Authorized RAG core files. Then
+connect the core through SearchDocumentTool and AgentRouter to `POST /api/chat`
+with local demonstration data.
 
 ## Handoff Summary
 
-Vertical slice 1 is complete and verified on `feature/phase4-core-backend`.
-The request flows from the development authentication header through
-`CurrentUser`, FastAPI, `LeaveService`, `LeaveRepository`, SQLAlchemy, and
-SQLite. Missing records become a transport-independent business exception and
-are mapped to HTTP 404 only at the API boundary. Formal tests pass at Service,
-API, and Repository integration levels. The maintained detailed design is
-`v0.5-draft`; review and approval remain pending. No Git staging, commit, or push
-has been performed. Learning-only code must remain outside the first formal
-commit.
+Vertical slice 1 is complete in local commit `9acf307`. The Authorized RAG core
+is now implemented and verified: Business DB permission plus active-version
+lookup happens before vector retrieval; the vector boundary receives an allowed
+version set; no/low evidence skips answer generation; citations come from
+metadata. The full suite passes 19 tests. Chat/Agent/Tool integration, document
+ingestion, Chroma, real embeddings, and an LLM provider are not yet complete.
+No push has been performed, and learning-only files remain outside formal work.
