@@ -11,7 +11,7 @@
 | 项目 | 内容 |
 |---|---|
 | 文档名称 | Project 3 详细设计书 |
-| Document Version | v0.6-draft |
+| Document Version | v0.7-draft |
 | Status | Draft（草稿，尚未正式 Review） |
 | Created Date | 2026-08-24 |
 | Last Updated | 2026-09-01 |
@@ -19,7 +19,7 @@
 | Reviewed By | Pending（待审阅） |
 | Approved By | Pending（待批准） |
 | Related Phase | Phase 4 Coding |
-| Current Scope | 查询自己的年假余额；Authorized RAG Read 核心链 |
+| Current Scope | 查询自己的年假余额；Authorized RAG Read；Chat Agent/Tool 接入 |
 | Related Requirements | `REQ-F-001`～`REQ-F-004`、`REQ-F-005`、`REQ-F-016`、`NFR-SEC-001` |
 
 ### 0.1 状态定义
@@ -54,6 +54,7 @@
 | v0.4 | 2026-08-26 | 确定余额记录不存在的业务异常，以及 API 和未来 Agent Tool 各自负责的传输映射边界 | Phase 4 Decision | Draft |
 | v0.5 | 2026-09-01 | 固化 Service、API、Repository 测试矩阵和测试追踪编号 | Phase 4 Verification | Draft |
 | v0.6 | 2026-09-01 | 固化 Authorized RAG Read 的检索前权限过滤、有效版本、证据阈值和 metadata citation 契约 | Original Specification + Phase 4 Decision | Draft |
+| v0.7 | 2026-09-01 | 接入 `POST /api/chat`、确定性 AgentRouter 与两个只读 Tool，并固化统一响应和测试 | Original Specification + Phase 4 Decision | Draft |
 
 变更历史只记录影响接口、数据模型、权限、异常处理或测试预期的重要变化；排版和错别字修正不单独增加版本。
 
@@ -355,6 +356,43 @@ No Evidence 时：
 | `TC-REP-AUTH-001` | Repository Integration | user explicit permission + active version | 返回相应版本编号 |
 | `TC-REP-AUTH-002` | Repository Integration | department/role permission | 只返回匹配范围的有效版本编号 |
 | `TC-REP-AUTH-003` | Repository Integration | 无权限、旧版或 inactive | 不返回这些版本编号 |
+| `TC-AGENT-001` | Agent Unit | 余额意图 | 只调用 `GetLeaveBalanceTool` |
+| `TC-AGENT-002` | Agent Unit | 公司规则问题 | 只调用 `SearchDocumentTool` |
+| `TC-API-CHAT-001` | API | 有认证上下文和有效消息 | 将完整 `CurrentUser` 与消息传给 Agent，返回统一 Schema |
+| `TC-API-CHAT-002` | API | 缺少 `X-User-Id` | HTTP 422，不进入 Agent |
+| `TC-API-CHAT-003` | API | 空消息 | HTTP 422，不进入 Agent |
+
+### 4.8 Chat / Agent / Tool 接入
+
+API 契约来自 `API-001`：
+
+```text
+POST /api/chat
+Authentication: Required
+```
+
+请求：
+
+```json
+{
+  "message": "国内出差住宿费上限是多少？"
+}
+```
+
+统一响应包含：
+
+- `intent`：当前为 `leave_balance` 或 `knowledge_query`。
+- `answer`：对用户显示的安全文本。
+- `evidence_found`：知识查询是否有足够证据；余额查询为 `null`。
+- `sources`：只由 RAG metadata 产生；余额查询为空。
+- `leave_balance`：余额 Tool 的结构化业务结果；知识查询为 `null`。
+
+当前 `AgentRouter` 使用确定性关键词识别余额意图，其余只读问题进入文档检索。该实现用于先验证 Tool 边界和完整调用链，不宣称是 LLM Agent。未来可以替换 Intent Classifier，但以下安全规则不变：
+
+- Agent 只选择 Tool，不直接访问数据库或 Vector DB。
+- Tool 只做受控桥接，不承载 Repository 查询或核心业务规则。
+- `GetLeaveBalanceTool` 只把 `CurrentUser` 交给 `LeaveService`。
+- `SearchDocumentTool` 把 query 和 `CurrentUser` 交给 `RagService`。
 
 ---
 
@@ -377,6 +415,8 @@ No Evidence 时：
 | DD-013 | Source Citation 由检索结果 metadata 组装，不允许回答生成器自行编造 | Original Specification + Phase 4 Decision | Confirmed |
 | DD-014 | 无结果或最高相关度低于阈值时返回 No Evidence，不调用回答生成器，并与 System Error 区分 | Original Specification + Phase 4 Decision | Confirmed |
 | DD-015 | 第一版先使用可替换的 Vector Repository 与 Answer Generator 接口；真实 Chroma、Embedding 和 LLM Provider 仍为 Pending | Phase 4 Decision | Confirmed |
+| DD-016 | `POST /api/chat` 返回统一只读 Chat Response；Agent 只选择 Tool，Tool 复用既有 Service | Original Specification + Phase 4 Decision | Confirmed |
+| DD-017 | 当前 AgentRouter 使用确定性关键词路由，不冒充 LLM Agent；未来替换分类器时保持 Tool 和安全边界 | Phase 4 Decision | Confirmed |
 
 ---
 
@@ -416,8 +456,9 @@ REQ-F-001..004 / NFR-SEC-001
 -> Project3_Basic_Design_v0.1.docx (§4.2, §6, §8, §9)
 -> FN-RAG-001
 -> docs/03_detailed_design.md §4
--> Authorized RAG Core Code
+-> Authorized RAG Core / SearchDocumentTool / AgentRouter / API-001
 -> TC-SVC-RAG-001..004 / TC-REP-AUTH-001..003
+-> TC-AGENT-001..002 / TC-API-CHAT-001..003
 ```
 
 

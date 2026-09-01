@@ -3,6 +3,7 @@ from collections.abc import AsyncIterator
 
 from fastapi import FastAPI
 
+from app.api.chat import router as chat_router
 from app.api.error_handlers import leave_balance_not_found_handler
 from app.api.leave_balance import router as leave_balance_router
 from app.db.session import create_schema
@@ -23,3 +24,4 @@ app.add_exception_handler(
     leave_balance_not_found_handler,
 )
 app.include_router(leave_balance_router)
+app.include_router(chat_router)

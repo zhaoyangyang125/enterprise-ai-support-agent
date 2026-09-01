@@ -2,7 +2,7 @@
 
 Enterprise AI Support Agent is a Python/FastAPI project that demonstrates secure business-data access, authorized RAG, Agent Tool Calling, and safe business workflows.
 
-The project currently contains a completed authenticated leave-balance slice and a tested Authorized RAG core.
+The project currently contains an authenticated leave-balance slice, Authorized RAG, and a local Chat/Agent/Tool path.
 
 ## Current Feature
 
@@ -64,6 +64,16 @@ python -m uvicorn app.main:app --reload
 
 Open Swagger UI at `http://127.0.0.1:8000/docs`, call `GET /api/me/leave-balance`, and provide `X-User-Id: U001`.
 
+You can also call `POST /api/chat` with `X-User-Id: U001`:
+
+```json
+{
+  "message": "国内出差住宿费上限是多少？"
+}
+```
+
+The local seed grants `U001` explicit read access to the active travel-policy version. A leave-balance message such as `我的剩余年假是多少？` is routed to the business-data tool instead.
+
 ## Tests
 
 ```powershell
@@ -83,8 +93,8 @@ python -m pytest -q
 
 ## Roadmap
 
-1. Connect the tested Authorized RAG core to Chat, Agent Router, and SearchDocumentTool.
-2. Add real document ingestion and a replaceable Chroma/embedding adapter.
-3. Agent Tool Calling across business DB and document search tools.
+1. Add real document ingestion and a replaceable Chroma/embedding adapter.
+2. Replace the deterministic intent router and evidence-only answer generator with provider adapters.
+3. Expand Agent Tool Calling across safe write workflows.
 4. Safe leave-request workflow with confirmation, final revalidation, transaction, and idempotency.
 5. Docker and cloud deployment.

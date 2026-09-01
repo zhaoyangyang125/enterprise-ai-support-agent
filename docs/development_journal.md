@@ -136,8 +136,54 @@ CurrentUser + Query
 - 权限与有效版本来自结构化 Business DB；向量库只负责允许范围内的相似度检索。
 - No Evidence 是正常 AI 质量结果，不等于系统异常。
 
+### Git
+
+- Local commit：`8b6d8fc feat: add authorized RAG core`
+
+---
+
+## 2026-09-01 — Milestone 3: Chat Agent / Tool Integration
+
+### 功能
+
+将两个已经验证的只读业务能力接入统一 `POST /api/chat`：余额问题调用 `GetLeaveBalanceTool`，公司规则问题调用 `SearchDocumentTool`。
+
+### 调用链
+
+```text
+POST /api/chat + CurrentUser
+-> AgentRouter
+   -> GetLeaveBalanceTool -> LeaveService -> Business DB
+   -> SearchDocumentTool -> RagService -> Authorized Retrieval
+-> ChatResponse
+```
+
+### 关键决定
+
+- Agent 负责意图分类和 Tool 选择，不写业务规则、不访问数据库。
+- Tool 是 Agent 到 Service 的受控桥梁，不重复实现 Service 逻辑。
+- 当前使用普通关键词路由，目的是让完整架构本地可运行、可测试。
+- 真实 LLM Intent Classifier 仍是可替换组件；面试时必须如实说明当前边界。
+- Mock Authentication 新增可选 department/role headers，用于本地验证文档权限；生产仍需 JWT/企业 IdP。
+
+### 验证
+
+- 2 个 Agent tests：余额意图和知识意图只选择对应 Tool。
+- 3 个 Chat API tests：认证上下文传递、缺少认证、空消息。
+- 全量测试：24 passed。
+- 真实本地 smoke test：余额问题和公司规则问题均通过 `/api/chat` 返回 HTTP 200。
+- RAG smoke response 包含真实 metadata citation：文件名、文档版本、第 3 页和 Section。
+
+### 本地演示数据
+
+- 用户：`U001`
+- 年假余额：`8.0 day`
+- 文档：`TRAVEL_POLICY / TRAVEL_POLICY-V1`
+- 权限：`U001` explicit read
+- 本地 Chunk：国内出差住宿费上限，第 3 页。
+
 ---
 
 ## Next Milestone
 
-把 Authorized RAG Core 接入 `SearchDocumentTool -> AgentRouter -> POST /api/chat`，并提供本地可运行的演示数据。
+文档 Ingestion 与真实可替换 Vector DB adapter；随后实现安全年假申请写操作。

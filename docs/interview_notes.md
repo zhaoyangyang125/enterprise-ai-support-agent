@@ -84,7 +84,7 @@ Repository Integration Test
 ## 6. 当前诚实边界
 
 - 第一条 Authorized DB Read 已完成并通过测试。
-- Authorized RAG Core 已完成；Chat/Agent/Tool 接入、真实文档 ingestion、真实 Vector DB/LLM 仍在 Roadmap 中。
+- Authorized RAG Core 与本地 Chat/Agent/Tool 调用链已完成；真实文档 ingestion、真实 Vector DB/LLM 仍在 Roadmap 中。
 - `X-User-Id` 是开发阶段模拟认证，不是生产认证方案。
 - SQLite 是本地开发数据库，未来部署环境可以通过 Repository/ORM 边界迁移到 PostgreSQL。
 
@@ -170,6 +170,12 @@ Source Citation は LLM に自由生成させません。検索された Chunk �
 ```
 
 不要一开始把所有设计细节全部说完。短版用于证明你能清楚说明调用链；展开回答用于证明你理解安全、异常边界和测试策略。
+
+### 7.11 「現在のAgentはLLM Agentですか」
+
+現在の `AgentRouter` は、まず全体のTool Calling構造と安全境界を検証するための、決定的なキーワードルーターです。LLM Agentとして完成したとは説明しません。
+
+ただし、AgentはIntentを分類してToolを選択し、Toolは既存のServiceを再利用する、という責務分担は実装済みです。今後Intent ClassifierをLLMベースに変更しても、Authorization、Service、Repositoryの境界は変更しない設計です。
 
 ## 8. 日语关键词与读法
 

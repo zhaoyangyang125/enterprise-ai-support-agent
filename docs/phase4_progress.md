@@ -4,7 +4,7 @@ Last updated: 2026-09-01
 
 ## Current Scope
 
-Vertical slice 2: Authorized RAG Read core.
+Vertical slice 3: local Chat Agent / Tool integration.
 
 ## Completed
 
@@ -77,6 +77,13 @@ Vertical slice 2: Authorized RAG Read core.
   deterministic in-memory retrieval implementation for local development.
 - Added 8 formal tests for RAG service behavior, Business DB access scope, and
   protection against returning a more-similar unauthorized chunk.
+- Saved the Authorized RAG core in local commit `8b6d8fc`.
+- Added `POST /api/chat`, a deterministic AgentRouter, GetLeaveBalanceTool, and
+  SearchDocumentTool.
+- Added local demo document metadata, an indexed Chunk, and explicit U001 read
+  permission through the seed command.
+- Added Agent and Chat API tests and completed a real local smoke test through
+  the fully assembled dependency chain.
 
 ## Modified Files
 
@@ -139,28 +146,30 @@ Vertical slice 2: Authorized RAG Read core.
 - Verified that source citations are constructed from retrieved metadata.
 - Verified that an unauthorized chunk is excluded even when it is more similar
   to the query than the authorized chunk.
+- Chat/Agent/Tool integration and the entire suite: 24 tests passed.
+- Real local `/api/chat` smoke tests returned HTTP 200 for both leave balance
+  and authorized policy search.
 
 ## Git Status
 
 - Current branch: `feature/phase4-core-backend`
 - Vertical slice 1 is stored in local commit `9acf307`.
-- Current Authorized RAG changes are modified/untracked and not yet committed.
+- Authorized RAG core is stored in local commit `8b6d8fc`.
+- Current Chat/Agent/Tool changes are modified/untracked and not yet committed.
 - No `git push` has been executed.
 - `practice/` and `tests/services/test_leave_availability_service.py` are
   learning-only and must remain outside the first formal feature commit.
 
 ## Next Step
 
-Review and selectively commit only the formal Authorized RAG core files. Then
-connect the core through SearchDocumentTool and AgentRouter to `POST /api/chat`
-with local demonstration data.
+Selectively commit the formal Chat/Agent/Tool integration, then begin document
+ingestion and the replaceable production vector adapter.
 
 ## Handoff Summary
 
-Vertical slice 1 is complete in local commit `9acf307`. The Authorized RAG core
-is now implemented and verified: Business DB permission plus active-version
-lookup happens before vector retrieval; the vector boundary receives an allowed
-version set; no/low evidence skips answer generation; citations come from
-metadata. The full suite passes 19 tests. Chat/Agent/Tool integration, document
-ingestion, Chroma, real embeddings, and an LLM provider are not yet complete.
-No push has been performed, and learning-only files remain outside formal work.
+Vertical slice 1 and the Authorized RAG core are saved in local commits. The
+local `POST /api/chat` path now routes leave-balance and company-policy questions
+through controlled Tools to their existing Services. The full suite passes 24
+tests and both real local smoke requests return HTTP 200. Document ingestion,
+Chroma, real embeddings, and an LLM provider are not yet complete. No push has
+been performed, and learning-only files remain outside formal work.
