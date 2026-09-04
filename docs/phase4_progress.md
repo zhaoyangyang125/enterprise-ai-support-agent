@@ -4,7 +4,7 @@ Last updated: 2026-09-04
 
 ## Current Scope
 
-Milestone 6 / Day 1: Level 2 complex-document design and fictional regression sample.
+Milestone 6 / Day 2: Excel Region Detection and structured ParsedBlock metadata.
 
 ## 2026-09-04 隔离开发说明
 
@@ -27,6 +27,18 @@ Milestone 6 / Day 1: Level 2 complex-document design and fictional regression sa
 - 已检查四个 Sheet 的渲染结果；无公式错误，CAN 十六进制表记按文本保留。
 - 隔离工作树全量测试：`45 passed`（提交基线 44 项 + Day 1 新增 1 项）。
 - 第一次全量测试的 6 个 setup error 来自系统临时目录权限；改用工作树内 `.pytest_tmp` 后全部通过，不是代码缺陷。
+
+## Day 2 已完成
+
+- 当前开发分支：`feature/complex-doc-day2-excel-parser`，从 Day 1 提交 `ab09e45` 创建。
+- 将复杂 Excel 实现从通用 `parsers.py` 分离到 `app/document_processing/excel_parser.py`。
+- `ParsedBlock` 新增 `content_type` 和 `cell_range`，并通过默认值保持 PDF 兼容。
+- 增加非破坏式 `_WorksheetLayout`，读取 merged cell 的逻辑值但不修改原 Workbook。
+- 实现 Title、Key-Value、Table、Note 和 Paragraph Region 转换。
+- 实现多行表头路径，例如 `CAN信号 / 信号名`。
+- 实现纵向合并数据继承；同 Sheet 多张表分别使用各自 Header。
+- 全量测试第一次发现两列两行被误判为 Key-Value，修正规则后重新验证。
+- 定向测试：`7 passed`；项目全量：`47 passed`，保留 1 条第三方 Starlette 弃用警告。
 
 ## Completed
 
@@ -216,9 +228,10 @@ Milestone 6 / Day 1: Level 2 complex-document design and fictional regression sa
 
 ## Git Status
 
-- Current development branch: `feature/complex-doc-day1-spec`
+- Current development branch: `feature/complex-doc-day2-excel-parser`
 - Original review branch remains: `feature/phase4-core-backend`
-- Day 1 changes have not been added or committed yet.
+- Day 1 is stored in local commit `ab09e45`.
+- Day 2 changes are verified but not staged or committed yet.
 - Vertical slice 1 is stored in local commit `9acf307`.
 - Authorized RAG core is stored in local commit `8b6d8fc`.
 - Chat/Agent/Tool integration is stored in local commit `9e1a513`.
@@ -231,7 +244,7 @@ Milestone 6 / Day 1: Level 2 complex-document design and fictional regression sa
 
 ## Next Step
 
-Day 1 已达到安全提交条件。保存 Day 1 后，Day 2 再开始实现 Excel Region Detection、目标 `ParsedBlock` metadata 和对应测试；不提前修改 PDF 或前端。
+Day 2 已达到安全提交条件。保存 Day 2 后，Day 3 再增强有文本层 PDF 的页眉页脚、标题和自然段处理，并规划 metadata 向 IndexedChunk/Citation 的统一传递；不开发 OCR 或视觉理解。
 
 ## Handoff Summary
 

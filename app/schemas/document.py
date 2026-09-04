@@ -1,4 +1,5 @@
 from pathlib import Path
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict
 
@@ -9,9 +10,13 @@ class ParsedBlock(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     content: str
+    content_type: Literal["title", "key_value", "table", "note", "paragraph"] = (
+        "paragraph"
+    )
     page: int | None = None
     section: str | None = None
     sheet: str | None = None
+    cell_range: str | None = None
     rows: str | None = None
 
 

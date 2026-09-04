@@ -11,7 +11,7 @@
 | 项目 | 内容 |
 |---|---|
 | 文档名称 | Project 3 详细设计书 |
-| Document Version | v0.10-draft |
+| Document Version | v0.11-draft |
 | Status | Draft（草稿，尚未正式 Review） |
 | Created Date | 2026-08-24 |
 | Last Updated | 2026-09-04 |
@@ -58,6 +58,7 @@
 | v0.8 | 2026-09-01 | 固化安全年假申请的 Prepare/Confirm/Revalidate/Transaction/Execute、余额预留和 Idempotency 契约 | Original Specification + Phase 4 Decision | Draft |
 | v0.9 | 2026-09-01 | 实现 PDF/Excel 解析、原本存储、跨存储处理状态、本地 Hash Embedding 与持久化 Chroma | Original Specification + Phase 4 Decision | Draft |
 | v0.10 | 2026-09-04 | 确定 Level 2 复杂文字文档范围、目标 ParsedBlock metadata、架空 HMI 样本和测试矩阵；OCR/视觉理解留到后续版本 | Phase 4 Decision | Draft |
+| v0.11 | 2026-09-04 | 实现 Excel Region Detection、多行表头路径、非破坏式合并单元格视图和 ParsedBlock 新 metadata | Phase 4 Implementation + Verification | Draft |
 
 变更历史只记录影响接口、数据模型、权限、异常处理或测试预期的重要变化；排版和错别字修正不单独增加版本。
 
@@ -614,11 +615,14 @@ Local PDF / Excel
 
 ### 6.8 Excel 结构规则
 
+- 已按空白行和独立合并标题检测 Region。
 - 多行表头按列路径组合，例如 `CAN信号 / 信号名`。
 - 数据区域的纵向合并值可继承到所属数据行。
 - 标题型横向合并不能复制成多个重复字段。
-- 同一 Sheet 的多个表必须按 Section 和区域边界分开，后一个表不得错误复用前一个表头。
-- Key-Value、Table 和 Note 生成不同 `content_type`，但最终都转换为统一 `ParsedBlock`。
+- 不修改、不 unmerge 原 Workbook；Parser 通过只读逻辑视图取得合并值。
+- 同一 Sheet 的多个表按 Section 和区域边界分开，后一个表不得错误复用前一个表头。
+- Key-Value、Table、Title、Note 和 Paragraph 生成不同 `content_type`，但最终都转换为统一 `ParsedBlock`。
+- 两列两行存在歧义时保守按 Table 处理；两列 Key-Value 至少需要三行，多组 Key-Value 可通过中间空列识别。
 
 ### 6.9 Day 1 测试矩阵
 
@@ -634,6 +638,23 @@ Local PDF / Excel
 | `TC-PARSE-XLSX-106` | 多 Sheet | 每个 Block 保存正确 Sheet 和 `cell_range` |
 | `TC-PARSE-XLSX-107` | Citation | Citation 的 Sheet/Range 与原文位置一致 |
 | `TC-PARSE-XLSX-108` | 原有简单 Excel | 现有基础解析能力不回归 |
+
+### 6.10 Day 2 实现结果
+
+调用链：
+
+```text
+ExcelDocumentParser.parse
+-> _WorksheetLayout（非破坏式 merged-cell view）
+-> Sheet row scan
+-> standalone title/note 或 contiguous region
+-> key_value / table / paragraph conversion
+-> ParsedBlock(content_type, sheet, section, cell_range, rows)
+```
+
+`cell_range` 表示包含 Header 的完整原始区域，例如 `A8:H12`；兼容字段 `rows` 对 Table 只表示数据行，例如 `10:12`。这一区分保留了旧 Citation 的语义，同时提供新的精确范围。
+
+Day 2 验证结果：复杂 Parser 定向测试 4 项通过；修正两列区域歧义后，全项目 47 项测试通过。现有 PDF Parser、DocumentService、Chroma 和业务链未回归。
 
 ---
 
@@ -671,6 +692,8 @@ Local PDF / Excel
 | DD-028 | ParsedBlock 增加 `content_type` 与 `cell_range`；定位 metadata 必须来自确定性 Parser | Phase 4 Decision | Confirmed |
 | DD-029 | Excel 使用区域分类和多行 Header 路径；不得通过全 Sheet 无条件展开破坏标题与表边界 | Phase 4 Decision | Confirmed |
 | DD-030 | 使用完全虚构的日语 HMI Workbook 作为复杂 Parser 的固定回归样本，不使用真实公司资料 | Phase 4 Decision | Confirmed |
+| DD-031 | Excel Parser 使用非破坏式 merged-cell view；不通过 unmerge 和全 Sheet 写回破坏原始结构 | Phase 4 Implementation | Confirmed |
+| DD-032 | 两列两行的歧义区域默认按 Table；两列 Key-Value 至少三行，多组 Key-Value 通过空列分隔识别 | Phase 4 Implementation + Test Failure Analysis | Confirmed |
 
 ---
 

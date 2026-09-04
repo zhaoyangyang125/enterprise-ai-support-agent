@@ -285,3 +285,54 @@ Docker 和最终验收材料。
 ## Next Milestone
 
 Docker、最终全量运行验证、文档一致性审计和面试交付包。
+
+---
+
+## 2026-09-04 — Milestone 6 / Day 2: Complex Excel Region Detection
+
+### 本次目标
+
+把“第一个非空行就是整张 Sheet 表头”的简单 Parser，升级为先识别 Region、再转换语义 Block 的结构化 Parser。
+
+### 数据流
+
+```text
+Workbook / Sheet
+-> 非破坏式 merged-cell view
+-> 空白行、合并标题和 Section 边界
+-> Title / Key-Value / Table / Note / Paragraph
+-> ParsedBlock
+```
+
+### 核心实现
+
+- `ParsedBlock` 新增 `content_type` 和 `cell_range`。
+- 多行表头组合成父子路径，例如 `CAN信号 / 信号名`。
+- 纵向合并的功能 ID 继承到相关数据行。
+- 标题型横向合并只保留一次，不复制成多个字段。
+- 同一 Sheet 的第二张表重新识别 Header，不使用第一张表的 Header。
+- Parser 不 unmerge 或改写原 Workbook，而是在内存中建立只读逻辑视图。
+
+### 测试发现的问题
+
+第一次全量测试中，只有两列两行的 `Rule / Value` 普通表被误判为 Key-Value，导致旧 `rows="2"` 变成 `rows="1:2"`。
+
+根因是“两列”本身不能证明它是 Key-Value。修正为：两列两行默认按 Table；两列 Key-Value 至少三行，多组 Key-Value 可通过中间空列判断。
+
+此外明确区分：
+
+- `cell_range`：包含 Header 的完整原始范围。
+- `rows`：兼容旧 Citation，只表示 Table 的数据行。
+
+### 验证
+
+- 复杂 Excel 和 DocumentService 定向测试：7 passed。
+- 项目全量测试：47 passed。
+- PDF、Chroma、Authorized RAG、年假余额和安全年假申请均未回归。
+
+### 面试要点
+
+- 复杂 Excel 不能默认一个 Sheet 只有一张表。
+- 合并单元格处理必须区分标题合并和数据合并。
+- 结构分类存在歧义时，应选择保守默认值并用回归测试固定行为。
+- Citation 定位由 Parser metadata 产生，而不是让 LLM 猜测。

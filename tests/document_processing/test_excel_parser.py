@@ -21,12 +21,14 @@ def test_excel_parser_preserves_sheet_headers_rows_and_merged_values(tmp_path) -
 
     blocks = ExcelDocumentParser().parse(path)
 
+    assert len(blocks) == 1
+    assert blocks[0].content_type == "table"
     assert blocks[0].sheet == "国内出張"
-    assert blocks[0].rows == "2"
+    assert blocks[0].cell_range == "A1:C4"
+    assert blocks[0].rows == "2:4"
     assert "区分=宿泊費" in blocks[0].content
     assert "上限=10000" in blocks[0].content
-    assert blocks[1].content.startswith("区分=交通費")
-    assert blocks[2].content.startswith("区分=交通費")
+    assert blocks[0].content.count("区分=交通費") == 2
 
 
 class FakePdfPage:
