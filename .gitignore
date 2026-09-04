@@ -9,3 +9,6 @@ dist/
 *.egg-info/
 chroma_data/
 document_storage/
+.env
+.env.*
+practice/
