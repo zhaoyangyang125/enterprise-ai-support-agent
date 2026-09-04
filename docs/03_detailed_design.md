@@ -11,15 +11,15 @@
 | 项目 | 内容 |
 |---|---|
 | 文档名称 | Project 3 详细设计书 |
-| Document Version | v0.9-draft |
+| Document Version | v0.10-draft |
 | Status | Draft（草稿，尚未正式 Review） |
 | Created Date | 2026-08-24 |
-| Last Updated | 2026-09-01 |
+| Last Updated | 2026-09-04 |
 | Prepared By | 项目负责人；Codex 辅助整理 |
 | Reviewed By | Pending（待审阅） |
 | Approved By | Pending（待批准） |
 | Related Phase | Phase 4 Coding |
-| Current Scope | 三条核心主链；Chat Agent/Tool；Document Ingestion 与本地 Chroma |
+| Current Scope | 三条核心主链；Chat Agent/Tool；Document Ingestion、本地 Chroma 与 Level 2 复杂文档解析设计 |
 | Related Requirements | `REQ-F-001`～`REQ-F-005`、`REQ-F-007`～`REQ-F-016`、`NFR-SEC-001` |
 
 ### 0.1 状态定义
@@ -57,6 +57,7 @@
 | v0.7 | 2026-09-01 | 接入 `POST /api/chat`、确定性 AgentRouter 与两个只读 Tool，并固化统一响应和测试 | Original Specification + Phase 4 Decision | Draft |
 | v0.8 | 2026-09-01 | 固化安全年假申请的 Prepare/Confirm/Revalidate/Transaction/Execute、余额预留和 Idempotency 契约 | Original Specification + Phase 4 Decision | Draft |
 | v0.9 | 2026-09-01 | 实现 PDF/Excel 解析、原本存储、跨存储处理状态、本地 Hash Embedding 与持久化 Chroma | Original Specification + Phase 4 Decision | Draft |
+| v0.10 | 2026-09-04 | 确定 Level 2 复杂文字文档范围、目标 ParsedBlock metadata、架空 HMI 样本和测试矩阵；OCR/视觉理解留到后续版本 | Phase 4 Decision | Draft |
 
 变更历史只记录影响接口、数据模型、权限、异常处理或测试预期的重要变化；排版和错别字修正不单独增加版本。
 
@@ -588,6 +589,52 @@ Local PDF / Excel
 | `TC-DOC-001` | Service Integration | Excel Ingestion 成功 | 原本存在、metadata 完整、版本 active |
 | `TC-DOC-002` | Service Integration | Vector Index 故障 | 版本 failed，不标记 active |
 
+### 6.6 Level 2 复杂文档增强范围
+
+本轮只增强“存在文本层、结构可由程序规则读取”的企业文档：
+
+- Excel：多 Sheet、同 Sheet 多区域、Key-Value、多行表头、合并单元格、多张表、Note。
+- PDF：重复页眉页脚清理、标题与自然段识别、页内 Chunk、页码定位。
+- Citation：继续由 Parser 和索引 metadata 产生，不由 LLM 生成。
+
+以下内容明确不进入本轮：OCR、扫描 PDF、图片/图表视觉理解、任意排版自动推断和复杂跨页表格视觉还原。
+
+完整范围与 6 天计划见 `docs/complex_document_upgrade_plan.md`。
+
+### 6.7 ParsedBlock 目标契约
+
+在保持现有调用链的前提下，计划为 `ParsedBlock` 增加：
+
+| 字段 | 含义 |
+|---|---|
+| `content_type` | `title / key_value / table / note / paragraph` |
+| `cell_range` | Excel 原始定位，例如 `A8:H12` |
+
+现有 `content`、`page`、`section`、`sheet` 保留；`rows` 作为旧 Citation 的过渡兼容字段，迁移完成前不直接删除。
+
+### 6.8 Excel 结构规则
+
+- 多行表头按列路径组合，例如 `CAN信号 / 信号名`。
+- 数据区域的纵向合并值可继承到所属数据行。
+- 标题型横向合并不能复制成多个重复字段。
+- 同一 Sheet 的多个表必须按 Section 和区域边界分开，后一个表不得错误复用前一个表头。
+- Key-Value、Table 和 Note 生成不同 `content_type`，但最终都转换为统一 `ParsedBlock`。
+
+### 6.9 Day 1 测试矩阵
+
+测试输入为完全虚构的 `samples/fictional_hmi_test_spec.xlsx`，预期区域清单位于 `tests/fixtures/complex_documents/fictional_hmi_expected_regions.json`。
+
+| Test Case ID | 场景 | 预期结果 |
+|---|---|---|
+| `TC-PARSE-XLSX-101` | Key-Value 区域 | 生成一个 `key_value` Block 并保留 Sheet/Range |
+| `TC-PARSE-XLSX-102` | 两行 Header | 生成父子 Header 路径，不丢失上层语义 |
+| `TC-PARSE-XLSX-103` | 数据行纵向合并 | 功能 ID 继承到相关记录，不生成无 ID 的错误记录 |
+| `TC-PARSE-XLSX-104` | 同一 Sheet 两张表 | 分成不同 Section/Block，不混用 Header |
+| `TC-PARSE-XLSX-105` | 合并的备注区域 | 生成 `note` Block，不复制为多个字段 |
+| `TC-PARSE-XLSX-106` | 多 Sheet | 每个 Block 保存正确 Sheet 和 `cell_range` |
+| `TC-PARSE-XLSX-107` | Citation | Citation 的 Sheet/Range 与原文位置一致 |
+| `TC-PARSE-XLSX-108` | 原有简单 Excel | 现有基础解析能力不回归 |
+
 ---
 
 ## 7. 设计决定记录 / Decision Log
@@ -620,6 +667,10 @@ Local PDF / Excel
 | DD-024 | v1 使用 Chroma 1.5.x PersistentClient，本地路径 `chroma_data/`，权限版本集合进入 query where | Phase 4 Decision + Official Chroma API | Confirmed |
 | DD-025 | v1 使用确定性 Hash Embedding 保持完全离线；生产 Embedding 通过 Protocol 替换 | Phase 4 Decision | Confirmed |
 | DD-026 | 多存储处理以 DocumentVersion `processing -> active/failed` 表达最终状态，不把未完成索引暴露给 Retrieval | Original Specification + Phase 4 Decision | Confirmed |
+| DD-027 | 6 天增强范围包含 Level 2 文字型复杂文档解析；OCR、扫描件和视觉理解留到后续版本 | Phase 4 Decision | Confirmed |
+| DD-028 | ParsedBlock 增加 `content_type` 与 `cell_range`；定位 metadata 必须来自确定性 Parser | Phase 4 Decision | Confirmed |
+| DD-029 | Excel 使用区域分类和多行 Header 路径；不得通过全 Sheet 无条件展开破坏标题与表边界 | Phase 4 Decision | Confirmed |
+| DD-030 | 使用完全虚构的日语 HMI Workbook 作为复杂 Parser 的固定回归样本，不使用真实公司资料 | Phase 4 Decision | Confirmed |
 
 ---
 
@@ -662,6 +713,14 @@ REQ-F-019..021 / FN-DOC-001
 -> docs/03_detailed_design.md §6
 -> DocumentService / PDF-Excel Parser / Document Storage / Chroma
 -> TC-PARSE-001..002 / TC-VECTOR-001..002 / TC-DOC-001..002
+```
+
+```text
+Basic Design §9 + Phase 4 DD-027..030
+-> docs/complex_document_upgrade_plan.md
+-> samples/fictional_hmi_test_spec.xlsx
+-> tests/fixtures/complex_documents/fictional_hmi_expected_regions.json
+-> TC-PARSE-XLSX-101..108
 ```
 
 ```text

@@ -1,10 +1,32 @@
 # Phase 4 Progress
 
-Last updated: 2026-09-01
+Last updated: 2026-09-04
 
 ## Current Scope
 
-Milestone 5: Document Ingestion and persistent local Chroma.
+Milestone 6 / Day 1: Level 2 complex-document design and fictional regression sample.
+
+## 2026-09-04 隔离开发说明
+
+- 原复习目录：`D:\AI\enterprise-ai-support-agent`，保持在 `feature/phase4-core-backend`，未修改。
+- 独立开发目录：`D:\AI\enterprise-ai-support-agent-complex-doc`。
+- 当前开发分支：`feature/complex-doc-day1-spec`。
+- 开发起点：提交 `8a1256a`。
+- 原目录的未跟踪学习文件没有复制到开发工作树。
+- 本日只完成式样、测试样本和预期结果，没有修改 Parser 业务代码。
+
+## Day 1 已完成
+
+- 确定本轮包含 Level 2 文字型复杂文档解析，不包含 OCR 和视觉理解。
+- 新增中文为主的 `docs/complex_document_upgrade_plan.md`。
+- 将正式详细设计更新为 `v0.10-draft`，新增范围、目标 Schema、解析规则、测试矩阵和 `DD-027`～`DD-030`。
+- 生成完全虚构的日语 HMI 样本 `samples/fictional_hmi_test_spec.xlsx`。
+- 样本包含多 Sheet、Key-Value、多行表头、合并单元格、同 Sheet 多表和 Note。
+- 新增 `tests/fixtures/complex_documents/fictional_hmi_expected_regions.json`，固定目标区域和必须保留的内容。
+- 新增样本自检，验证四个 Sheet、关键单元格、合并区域和预期 Region 均存在。
+- 已检查四个 Sheet 的渲染结果；无公式错误，CAN 十六进制表记按文本保留。
+- 隔离工作树全量测试：`45 passed`（提交基线 44 项 + Day 1 新增 1 项）。
+- 第一次全量测试的 6 个 setup error 来自系统临时目录权限；改用工作树内 `.pytest_tmp` 后全部通过，不是代码缺陷。
 
 ## Completed
 
@@ -194,7 +216,9 @@ Milestone 5: Document Ingestion and persistent local Chroma.
 
 ## Git Status
 
-- Current branch: `feature/phase4-core-backend`
+- Current development branch: `feature/complex-doc-day1-spec`
+- Original review branch remains: `feature/phase4-core-backend`
+- Day 1 changes have not been added or committed yet.
 - Vertical slice 1 is stored in local commit `9acf307`.
 - Authorized RAG core is stored in local commit `8b6d8fc`.
 - Chat/Agent/Tool integration is stored in local commit `9e1a513`.
@@ -207,8 +231,7 @@ Milestone 5: Document Ingestion and persistent local Chroma.
 
 ## Next Step
 
-Run the final full suite, selectively commit only the verified ingestion files,
-then stop feature expansion. Resume with Docker and delivery audit.
+Day 1 已达到安全提交条件。保存 Day 1 后，Day 2 再开始实现 Excel Region Detection、目标 `ParsedBlock` metadata 和对应测试；不提前修改 PDF 或前端。
 
 ## Handoff Summary
 

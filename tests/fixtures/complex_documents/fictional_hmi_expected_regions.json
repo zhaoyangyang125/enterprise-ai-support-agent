@@ -1,0 +1,75 @@
+{
+  "source_file": "fictional_hmi_test_spec.xlsx",
+  "fictional_data": true,
+  "expected_regions": [
+    {
+      "region_id": "HMI-KV-001",
+      "sheet": "機能仕様",
+      "cell_range": "A3:H5",
+      "content_type": "key_value",
+      "must_contain": ["対象システム", "Demo Cockpit HMI", "共通前提"]
+    },
+    {
+      "region_id": "HMI-TABLE-001",
+      "sheet": "機能仕様",
+      "cell_range": "A8:H12",
+      "content_type": "table",
+      "section": "1. 基本機能テスト",
+      "must_contain": ["HMI-AC-001", "CAN信号 / 信号名", "HMI_AC_REQ", "01h"]
+    },
+    {
+      "region_id": "HMI-TABLE-002",
+      "sheet": "機能仕様",
+      "cell_range": "A16:H19",
+      "content_type": "table",
+      "section": "2. 異常系テスト",
+      "must_contain": ["HMI-NAV-ERR-001", "GNSS_VALID", "00h"]
+    },
+    {
+      "region_id": "HMI-NOTE-001",
+      "sheet": "機能仕様",
+      "cell_range": "A21:H23",
+      "content_type": "note",
+      "must_contain": ["画面遷移の抑止", "設定値が変更されていない"]
+    },
+    {
+      "region_id": "HMI-KV-002",
+      "sheet": "画面遷移",
+      "cell_range": "A4:B7",
+      "content_type": "key_value",
+      "must_contain": ["対象画面", "起動条件", "遷移抑止"]
+    },
+    {
+      "region_id": "HMI-TABLE-003",
+      "sheet": "画面遷移",
+      "cell_range": "A10:F14",
+      "content_type": "table",
+      "section": "1. 通常画面遷移",
+      "must_contain": ["TR-003", "NAV押下", "ナビゲーション"]
+    },
+    {
+      "region_id": "HMI-TABLE-004",
+      "sheet": "画面遷移",
+      "cell_range": "A18:F21",
+      "content_type": "table",
+      "section": "2. Popupおよび遷移抑止",
+      "must_contain": ["POP-003", "CAN通信断", "設定変更せず前画面へ戻る"]
+    },
+    {
+      "region_id": "HMI-TABLE-005",
+      "sheet": "CAN信号",
+      "cell_range": "A5:G11",
+      "content_type": "table",
+      "section": "1. 信号一覧",
+      "must_contain": ["ビット配置 / Start Bit", "VEHICLE_SPEED", "180h"]
+    },
+    {
+      "region_id": "HMI-TABLE-006",
+      "sheet": "CAN信号",
+      "cell_range": "A14:D18",
+      "content_type": "table",
+      "section": "2. 値定義",
+      "must_contain": ["GNSS_VALID", "01h", "現在地と地図を表示"]
+    }
+  ]
+}
