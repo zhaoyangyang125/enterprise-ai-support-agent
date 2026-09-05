@@ -95,9 +95,11 @@ def test_answer_uses_authorized_versions_and_metadata_citation() -> None:
         "document_id": "TRAVEL_POLICY",
         "document_version_id": "TRAVEL_POLICY-V2",
         "source_name": "TravelPolicy_v2.pdf",
+        "content_type": "paragraph",
         "page": 3,
         "section": "2.1 国内出張",
         "sheet": None,
+        "cell_range": None,
         "rows": None,
     }
     assert vector_repository.calls == [

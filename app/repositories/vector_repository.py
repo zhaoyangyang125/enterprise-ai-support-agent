@@ -169,9 +169,14 @@ class ChromaVectorRepository:
                     content=content,
                     score=max(0.0, min(1.0, 1.0 - float(distance))),
                     source_name=str(metadata["source_name"]),
+                    content_type=self._optional_str(
+                        metadata.get("content_type")
+                    )
+                    or "paragraph",
                     page=self._optional_int(metadata.get("page")),
                     section=self._optional_str(metadata.get("section")),
                     sheet=self._optional_str(metadata.get("sheet")),
+                    cell_range=self._optional_str(metadata.get("cell_range")),
                     rows=self._optional_str(metadata.get("rows")),
                 )
             )
@@ -185,8 +190,9 @@ class ChromaVectorRepository:
             "document_id": chunk.document_id,
             "document_version_id": chunk.document_version_id,
             "source_name": chunk.source_name,
+            "content_type": chunk.content_type,
         }
-        for key in ("page", "section", "sheet", "rows"):
+        for key in ("page", "section", "sheet", "cell_range", "rows"):
             value = getattr(chunk, key)
             if value is not None:
                 metadata[key] = value

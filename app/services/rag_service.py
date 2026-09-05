@@ -92,9 +92,11 @@ class RagService:
                 document_id=chunk.document_id,
                 document_version_id=chunk.document_version_id,
                 source_name=chunk.source_name,
+                content_type=chunk.content_type,
                 page=chunk.page,
                 section=chunk.section,
                 sheet=chunk.sheet,
+                cell_range=chunk.cell_range,
                 rows=chunk.rows,
             )
             key = tuple(citation.model_dump().values())

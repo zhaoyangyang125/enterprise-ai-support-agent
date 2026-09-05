@@ -64,7 +64,7 @@ def test_pdf_parser_preserves_page_numbers_and_paragraph_chunks(
     """验证 PDF Parser 保留页码并按自然段组合 Chunk。 / Verifies the PDF parser preserves page numbers and groups natural paragraphs."""
 
     monkeypatch.setattr(
-        "app.document_processing.parsers.PdfReader",
+        "app.document_processing.pdf_parser.PdfReader",
         FakePdfReader,
     )
 
@@ -73,5 +73,6 @@ def test_pdf_parser_preserves_page_numbers_and_paragraph_chunks(
     )
 
     assert [block.page for block in blocks] == [1, 2]
-    assert blocks[0].content == "第一段。\n\n第二段。"
+    assert blocks[0].content_type == "paragraph"
+    assert blocks[0].content == "第一段。\n第二段。"
     assert blocks[1].content == "第三页内容。"

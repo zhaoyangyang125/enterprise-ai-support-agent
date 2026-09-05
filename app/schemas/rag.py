@@ -1,5 +1,7 @@
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.schemas.document import DocumentContentType
+
 
 class IndexedChunk(BaseModel):
     """表示存入向量检索层的文档片段和来源信息。 / Represents an indexed document chunk and its source metadata."""
@@ -11,9 +13,11 @@ class IndexedChunk(BaseModel):
     document_version_id: str
     content: str
     source_name: str
+    content_type: DocumentContentType = "paragraph"
     page: int | None = None
     section: str | None = None
     sheet: str | None = None
+    cell_range: str | None = None
     rows: str | None = None
 
 
@@ -31,9 +35,11 @@ class SourceCitation(BaseModel):
     document_id: str
     document_version_id: str
     source_name: str
+    content_type: DocumentContentType = "paragraph"
     page: int | None = None
     section: str | None = None
     sheet: str | None = None
+    cell_range: str | None = None
     rows: str | None = None
 
 

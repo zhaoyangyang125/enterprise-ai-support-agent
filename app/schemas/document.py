@@ -4,15 +4,16 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict
 
 
+DocumentContentType = Literal["title", "key_value", "table", "note", "paragraph"]
+
+
 class ParsedBlock(BaseModel):
     """表示解析器保留来源定位后的语义内容块。 / Represents a semantic content block with preserved source location."""
 
     model_config = ConfigDict(frozen=True)
 
     content: str
-    content_type: Literal["title", "key_value", "table", "note", "paragraph"] = (
-        "paragraph"
-    )
+    content_type: DocumentContentType = "paragraph"
     page: int | None = None
     section: str | None = None
     sheet: str | None = None

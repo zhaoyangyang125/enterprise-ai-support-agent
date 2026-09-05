@@ -83,6 +83,8 @@ def test_ingestion_stores_original_indexes_metadata_and_activates_version(
     assert result.stored_path.exists()
     assert version is not None and version.status == "active"
     assert vector_index.chunks[0].sheet == "Travel"
+    assert vector_index.chunks[0].content_type == "table"
+    assert vector_index.chunks[0].cell_range == "A1:B2"
     assert vector_index.chunks[0].rows == "2"
     assert vector_index.chunks[0].source_name == "travel.xlsx"
 

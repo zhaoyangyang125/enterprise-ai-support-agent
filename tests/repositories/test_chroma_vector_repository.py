@@ -60,3 +60,41 @@ def test_chroma_persistent_client_loads_index_on_restart(tmp_path) -> None:
 
     assert len(result) == 1
     assert result[0].document_version_id == "DOC-V1"
+
+
+def test_chroma_round_trips_structured_excel_citation_metadata(tmp_path) -> None:
+    """验证 Chroma 保存并恢复结构类型和 Excel Cell Range。 / Verifies Chroma round-trips content type and Excel cell range."""
+
+    repository = ChromaVectorRepository.persistent(
+        path=tmp_path / "chroma",
+        collection_name="structured_documents",
+        embedding_provider=HashEmbeddingProvider(dimensions=64),
+    )
+    repository.upsert_chunks(
+        [
+            IndexedChunk(
+                chunk_id="HMI-TABLE-001",
+                document_id="HMI-SPEC",
+                document_version_id="HMI-SPEC-V1",
+                content="機能ID=HMI-AC-001; 期待結果=エアコン画面を表示",
+                source_name="fictional_hmi_test_spec.xlsx",
+                content_type="table",
+                section="1. 基本機能テスト",
+                sheet="機能仕様",
+                cell_range="A8:H12",
+                rows="10:12",
+            )
+        ]
+    )
+
+    result = repository.search(
+        "HMI-AC-001 エアコン",
+        frozenset({"HMI-SPEC-V1"}),
+        1,
+    )
+
+    assert len(result) == 1
+    assert result[0].content_type == "table"
+    assert result[0].sheet == "機能仕様"
+    assert result[0].cell_range == "A8:H12"
+    assert result[0].rows == "10:12"

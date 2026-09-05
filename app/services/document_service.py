@@ -87,8 +87,10 @@ class DocumentService:
             str(value)
             for value in (
                 document_version_id,
+                block.content_type,
                 block.page,
                 block.sheet,
+                block.cell_range,
                 block.rows,
                 block.section,
                 block.content,
@@ -101,8 +103,10 @@ class DocumentService:
             document_version_id=document_version_id,
             content=block.content,
             source_name=source_name,
+            content_type=block.content_type,
             page=block.page,
             section=block.section,
             sheet=block.sheet,
+            cell_range=block.cell_range,
             rows=block.rows,
         )

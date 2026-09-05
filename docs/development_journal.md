@@ -336,3 +336,55 @@ Workbook / Sheet
 - 合并单元格处理必须区分标题合并和数据合并。
 - 结构分类存在歧义时，应选择保守默认值并用回归测试固定行为。
 - Citation 定位由 Parser metadata 产生，而不是让 LLM 猜测。
+
+## 2026-09-05 — Milestone 6 / Day 3: PDF 与统一 Metadata
+
+### 本次目标
+
+让文字型 PDF 的检索结果不仅“能读到文字”，还能够排除重复页眉页脚、识别章节，并把准确页码一直带到 Citation。
+
+### 数据流
+
+```text
+PDF 每页文本
+-> 页边重复模式检测
+-> 标题/正文识别
+-> 页内 Chunk
+-> ParsedBlock
+-> IndexedChunk
+-> Chroma metadata
+-> SourceCitation
+```
+
+### 核心规则
+
+- 只检查每页顶部和底部的候选行，避免删除正文中的重复业务句子。
+- 页边文本至少出现在 60% 页面并覆盖不少于 2 页时，才视为重复页眉页脚。
+- 页码数字先转换为占位符，因此不同页的 `Page 1 / 3`、`Page 2 / 3` 能够匹配。
+- 标题生成 `title` Block，同时成为后续正文的 `section`。
+- Chunk 不跨页，优先保证 Citation 页码准确；超长文本只在当前页内切分。
+
+### 为什么不能只依赖 PDF 文本提取
+
+`pypdf` 能够拿到文本，不代表已经理解文档结构。直接把每页文本整体送去 Embedding，会让每个 Chunk 重复包含页眉页脚，也无法说明某段正文属于哪个章节。本次在文本提取后增加了确定性结构整理，但没有声称支持扫描件或视觉表格。
+
+### Metadata 贯通
+
+Day 2 已让 Excel Parser 产生 `content_type` 和 `cell_range`。Day 3 将这两个字段继续传入 IndexedChunk、Chroma 和 SourceCitation。这样 API 返回的来源位置来自 Parser 和索引数据，不需要 LLM 猜测。
+
+为了兼容旧 Chroma 数据，缺少 `content_type` 的旧记录按 `paragraph` 读取，不要求立刻重建全部本地索引。
+
+### 验证
+
+- 完全虚构的三页日语 HMI PDF 能提取日文文本。
+- 三页渲染结果均已人工查看，无截断或排版问题。
+- 重复页眉、版本行和页脚没有进入 ParsedBlock。
+- PDF/metadata 相关测试：16 passed。
+- 项目全量测试：50 passed；只有 1 条第三方 Starlette 弃用警告。
+
+### 面试要点
+
+- PDF 有文本层只解决“能提取文字”，结构和 Citation 仍需程序处理。
+- 页眉页脚删除应使用保守规则，并限制在页面边缘。
+- 不跨页 Chunk 是为了让页码 Citation 可验证。
+- metadata 必须从 Parser 一直贯通到检索结果，不能在回答阶段临时猜测。

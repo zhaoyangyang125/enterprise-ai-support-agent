@@ -11,10 +11,10 @@
 | 项目 | 内容 |
 |---|---|
 | 文档名称 | Project 3 详细设计书 |
-| Document Version | v0.11-draft |
+| Document Version | v0.12-draft |
 | Status | Draft（草稿，尚未正式 Review） |
 | Created Date | 2026-08-24 |
-| Last Updated | 2026-09-04 |
+| Last Updated | 2026-09-05 |
 | Prepared By | 项目负责人；Codex 辅助整理 |
 | Reviewed By | Pending（待审阅） |
 | Approved By | Pending（待批准） |
@@ -59,6 +59,7 @@
 | v0.9 | 2026-09-01 | 实现 PDF/Excel 解析、原本存储、跨存储处理状态、本地 Hash Embedding 与持久化 Chroma | Original Specification + Phase 4 Decision | Draft |
 | v0.10 | 2026-09-04 | 确定 Level 2 复杂文字文档范围、目标 ParsedBlock metadata、架空 HMI 样本和测试矩阵；OCR/视觉理解留到后续版本 | Phase 4 Decision | Draft |
 | v0.11 | 2026-09-04 | 实现 Excel Region Detection、多行表头路径、非破坏式合并单元格视图和 ParsedBlock 新 metadata | Phase 4 Implementation + Verification | Draft |
+| v0.12 | 2026-09-05 | 增强文字型 PDF 的重复页眉页脚清理、标题/段落识别与页内 Chunk，并将结构 metadata 贯通到 Chroma 和 Citation | Phase 4 Implementation + Verification | Draft |
 
 变更历史只记录影响接口、数据模型、权限、异常处理或测试预期的重要变化；排版和错别字修正不单独增加版本。
 
@@ -555,7 +556,7 @@ Idempotency-Key: caller-generated unique value
 Local PDF / Excel
 -> DocumentVersion = processing (Business DB)
 -> Original copy (Document Storage)
--> PDF page/paragraph or Excel sheet/header/row parser
+-> PDF page/heading/paragraph or Excel sheet/region/structure parser
 -> IndexedChunk + stable SHA-256 chunk_id
 -> local Hash Embedding
 -> Chroma upsert(content + embedding + metadata)
@@ -566,15 +567,15 @@ Local PDF / Excel
 
 ### 6.3 权限与 Citation 不变量
 
-- Chroma metadata 至少保存 `document_id`、`document_version_id`、`source_name`。
-- PDF 额外保存 `page`；Excel 保存 `sheet` 和 `rows`。
+- Chroma metadata 至少保存 `document_id`、`document_version_id`、`source_name`、`content_type`。
+- PDF 额外保存 `page` 和 `section`；Excel 保存 `sheet`、`cell_range` 和兼容字段 `rows`。
 - Chroma query 的 `where` 使用 `document_version_id: {$in: allowed_ids}`，在向量查询阶段过滤。
 - Business DB 中只有 `active` 且当前用户有 user/department/role read permission 的版本才能进入允许集合。
 - Vector DB 不独立决定权限；LLM 不生成 citation 字段。
 
 ### 6.4 v1 实现边界
 
-- PDF v1 只处理存在文本层的文件；OCR 仍为 `OI-001`。
+- PDF v1 只处理存在文本层的文件；先检测多页重复的顶部/底部候选行，再按页面、标题和正文生成 Block。OCR 仍为 `OI-001`。
 - Excel v1 展开 merged cell，并按 Sheet、Header 和数据行生成语义记录，不使用固定 500 字切割。
 - Hash Embedding 用于离线、确定性和可重复测试，不声称达到生产语义模型质量。
 - 真实 Embedding 模型和 LLM Provider 仍可通过现有 Protocol 替换。
@@ -585,8 +586,11 @@ Local PDF / Excel
 |---|---|---|---|
 | `TC-PARSE-001` | Parser Unit | Excel Header、Row、Merged Cell | 保留 Sheet/Row 并恢复 Header=Value 语义 |
 | `TC-PARSE-002` | Parser Unit | PDF 多页自然段 | 保留 page 并按自然段组合 Chunk |
+| `TC-PARSE-PDF-101` | Parser Integration | 三页架空日语 PDF | 清除重复页眉页脚，保留正确 page/section |
+| `TC-PARSE-PDF-102` | Parser Unit | 单行超过 Chunk 上限 | 在同一页内稳定拆分，不生成跨页 Chunk |
 | `TC-VECTOR-001` | Chroma Integration | 越权 Chunk 更相似 | Chroma where 只返回允许版本 |
 | `TC-VECTOR-002` | Chroma Integration | 重建 Repository | 从本地持久化目录重新读取索引 |
+| `TC-VECTOR-003` | Chroma Integration | 结构化 Excel metadata | `content_type`、Sheet、Cell Range 和 rows 可完整写入并恢复 |
 | `TC-DOC-001` | Service Integration | Excel Ingestion 成功 | 原本存在、metadata 完整、版本 active |
 | `TC-DOC-002` | Service Integration | Vector Index 故障 | 版本 failed，不标记 active |
 
@@ -604,7 +608,7 @@ Local PDF / Excel
 
 ### 6.7 ParsedBlock 目标契约
 
-在保持现有调用链的前提下，计划为 `ParsedBlock` 增加：
+在保持现有调用链的前提下，`ParsedBlock` 已增加：
 
 | 字段 | 含义 |
 |---|---|
@@ -656,6 +660,41 @@ ExcelDocumentParser.parse
 
 Day 2 验证结果：复杂 Parser 定向测试 4 项通过；修正两列区域歧义后，全项目 47 项测试通过。现有 PDF Parser、DocumentService、Chroma 和业务链未回归。
 
+### 6.11 Day 3 PDF 与 metadata 实现结果
+
+PDF 调用链：
+
+```text
+PdfReader 每页提取文本
+-> 保留非空文本行
+-> 只统计每页顶部/底部候选行
+-> 规范化空白并遮蔽页码数字
+-> 在至少 60% 页面重复时认定为页眉/页脚
+-> 仅从页边候选区域删除
+-> 标题识别和页内段落组合
+-> ParsedBlock(content_type, page, section)
+```
+
+页眉页脚清理采用保守规则：相同文本必须跨页重复，并且只能从页边候选区域删除。正文中偶然重复的业务句子不会因为内容相同就被全局删除。`Page 1 / 3`、`Page 2 / 3` 等页码先将数字规范化为占位符，因此能够被识别为同一页脚模式。
+
+Chunk 不跨页。即使相邻两页属于同一章节，也分别生成带各自 `page` 的 Block，以保证 Citation 能准确定位。单个超长文本行超过上限时，在当前页内按上限切分。
+
+统一 metadata 流：
+
+```text
+ParsedBlock
+-> DocumentService._to_indexed_chunk
+-> IndexedChunk
+-> Chroma metadata
+-> Vector Repository search result
+-> RagService
+-> SourceCitation
+```
+
+`content_type` 和 `cell_range` 已沿上述链路完整传递。读取旧 Chroma 数据时，如果没有 `content_type`，使用 `paragraph` 作为兼容默认值；Citation 字段仍由程序根据 metadata 组装，不交给 LLM 生成。
+
+Day 3 使用完全虚构的三页日语 HMI 方针 PDF 做真实文件测试，并对全部页面进行了渲染检查。验证结果：Day 3 相关测试 16 项通过；全项目 50 项测试通过，保留 1 条第三方 Starlette 弃用警告。
+
 ---
 
 ## 7. 设计决定记录 / Decision Log
@@ -694,6 +733,10 @@ Day 2 验证结果：复杂 Parser 定向测试 4 项通过；修正两列区域
 | DD-030 | 使用完全虚构的日语 HMI Workbook 作为复杂 Parser 的固定回归样本，不使用真实公司资料 | Phase 4 Decision | Confirmed |
 | DD-031 | Excel Parser 使用非破坏式 merged-cell view；不通过 unmerge 和全 Sheet 写回破坏原始结构 | Phase 4 Implementation | Confirmed |
 | DD-032 | 两列两行的歧义区域默认按 Table；两列 Key-Value 至少三行，多组 Key-Value 通过空列分隔识别 | Phase 4 Implementation + Test Failure Analysis | Confirmed |
+| DD-033 | PDF 页眉页脚只在页边候选行中检测；规范化后至少出现在 60% 页面且不少于 2 页才删除 | Phase 4 Implementation | Confirmed |
+| DD-034 | PDF Chunk 不跨页；标题写入 `section`，超长文本只在当前页内切分 | Phase 4 Implementation | Confirmed |
+| DD-035 | `content_type` 与 `cell_range` 从 ParsedBlock 贯通 IndexedChunk、Chroma 和 SourceCitation；旧索引缺少类型时默认 `paragraph` | Phase 4 Implementation | Confirmed |
+| DD-036 | PDF 回归测试使用完全虚构、可公开的日语 HMI 方针文件；本轮不加入 OCR 或视觉理解 | Phase 4 Decision + Verification | Confirmed |
 
 ---
 
@@ -744,6 +787,14 @@ Basic Design §9 + Phase 4 DD-027..030
 -> samples/fictional_hmi_test_spec.xlsx
 -> tests/fixtures/complex_documents/fictional_hmi_expected_regions.json
 -> TC-PARSE-XLSX-101..108
+```
+
+```text
+Basic Design §9 + Phase 4 DD-033..036
+-> samples/fictional_hmi_policy.pdf
+-> PdfDocumentParser
+-> ParsedBlock / IndexedChunk / Chroma / SourceCitation
+-> TC-PARSE-PDF-101..102 / TC-VECTOR-003
 ```
 
 ```text

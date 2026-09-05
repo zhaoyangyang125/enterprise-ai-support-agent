@@ -1,19 +1,19 @@
 # Phase 4 Progress
 
-Last updated: 2026-09-04
+Last updated: 2026-09-05
 
 ## Current Scope
 
-Milestone 6 / Day 2: Excel Region Detection and structured ParsedBlock metadata.
+Milestone 6 / Day 3: text-layer PDF enhancement and end-to-end structured metadata.
 
 ## 2026-09-04 隔离开发说明
 
 - 原复习目录：`D:\AI\enterprise-ai-support-agent`，保持在 `feature/phase4-core-backend`，未修改。
 - 独立开发目录：`D:\AI\enterprise-ai-support-agent-complex-doc`。
-- 当前开发分支：`feature/complex-doc-day1-spec`。
+- 当前开发分支：`feature/complex-doc-day3-pdf-metadata`。
 - 开发起点：提交 `8a1256a`。
 - 原目录的未跟踪学习文件没有复制到开发工作树。
-- 本日只完成式样、测试样本和预期结果，没有修改 Parser 业务代码。
+- Day 1～Day 3 均只在独立工作树开发，原复习目录没有被本轮代码覆盖。
 
 ## Day 1 已完成
 
@@ -39,6 +39,19 @@ Milestone 6 / Day 2: Excel Region Detection and structured ParsedBlock metadata.
 - 实现纵向合并数据继承；同 Sheet 多张表分别使用各自 Header。
 - 全量测试第一次发现两列两行被误判为 Key-Value，修正规则后重新验证。
 - 定向测试：`7 passed`；项目全量：`47 passed`，保留 1 条第三方 Starlette 弃用警告。
+
+## Day 3 已完成
+
+- 当前开发分支：`feature/complex-doc-day3-pdf-metadata`，从 Day 2 提交 `2aa45b5` 创建。
+- 将 PDF Parser 从通用 Registry 文件分离到 `app/document_processing/pdf_parser.py`。
+- 只处理存在文本层的 PDF，不添加 OCR 或图片理解。
+- 对每页顶部和底部候选行进行跨页重复检测，规范化页码后清理重复页眉页脚。
+- 按标题与正文生成 `title` / `paragraph` Block，保留 `page` 和 `section`。
+- Chunk 不跨页；单行超长时只在当前页内切分。
+- `content_type` 和 `cell_range` 已从 ParsedBlock 贯通 IndexedChunk、Chroma 检索结果和 SourceCitation。
+- 使用完全虚构的三页日语 HMI PDF 进行真实文件解析测试，并逐页渲染检查。
+- Day 3 定向测试：`16 passed`；项目全量：`50 passed`，保留 1 条第三方 Starlette 弃用警告。
+- Day 3 已保存到当前本地分支的独立提交。
 
 ## Completed
 
@@ -224,14 +237,15 @@ Milestone 6 / Day 2: Excel Region Detection and structured ParsedBlock metadata.
 - A real HTTP Prepare/Confirm/retry flow proved one request row and one balance
   deduction.
 - Document parser, Chroma persistence/filtering, and cross-store status tests
-  are included in the final full-suite result: 47 tests passed.
+  are included in the current full-suite result: 50 tests passed.
 
 ## Git Status
 
-- Current development branch: `feature/complex-doc-day2-excel-parser`
+- Current development branch: `feature/complex-doc-day3-pdf-metadata`
 - Original review branch remains: `feature/phase4-core-backend`
 - Day 1 is stored in local commit `ab09e45`.
-- Day 2 changes are verified but not staged or committed yet.
+- Day 2 is stored in local commit `2aa45b5`.
+- Day 3 is stored in the current branch's dedicated local commit.
 - Vertical slice 1 is stored in local commit `9acf307`.
 - Authorized RAG core is stored in local commit `8b6d8fc`.
 - Chat/Agent/Tool integration is stored in local commit `9e1a513`.
@@ -244,12 +258,8 @@ Milestone 6 / Day 2: Excel Region Detection and structured ParsedBlock metadata.
 
 ## Next Step
 
-Day 2 已达到安全提交条件。保存 Day 2 后，Day 3 再增强有文本层 PDF 的页眉页脚、标题和自然段处理，并规划 metadata 向 IndexedChunk/Citation 的统一传递；不开发 OCR 或视觉理解。
+Day 3 已安全保存。Day 4 开发结构化 Citation、metadata Filtering 和小型 Evaluation，重点验证检索前权限过滤、无证据拒答以及 PDF/Excel 定位信息；不开发 OCR 或视觉理解。
 
 ## Handoff Summary
 
-The two read chains, Chat/Agent/Tool, and safe write chain are saved in four
-local commits. Document Ingestion and persistent local Chroma are implemented
-and awaiting one final full-suite verification and local commit. Docker, Admin
-Upload API, production Embedding/LLM, OCR, and final delivery validation remain.
-No push has been performed, and learning-only files remain outside formal work.
+三条业务主链、Document Ingestion 和本地 Chroma 已保存于本地提交。复杂文档 Day 1、Day 2、Day 3 已分别提交；Day 3 的文字型 PDF 增强和 metadata 贯通已通过 50 项全量测试。尚未执行 push 或 merge，原复习目录和其中的学习文件未被本轮开发覆盖。
