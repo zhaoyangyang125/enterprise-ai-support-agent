@@ -2,7 +2,12 @@ from typing import Protocol
 
 from app.auth.context import CurrentUser
 from app.repositories.vector_repository import VectorRepository
-from app.schemas.rag import RagAnswerResponse, RetrievedChunk, SourceCitation
+from app.schemas.rag import (
+    RagAnswerResponse,
+    RetrievedChunk,
+    RetrievalFilter,
+    SourceCitation,
+)
 from app.services.authorization_service import AuthorizationService
 
 
@@ -47,7 +52,12 @@ class RagService:
         self._minimum_score = minimum_score
         self._retrieval_limit = retrieval_limit
 
-    def answer(self, query: str, current_user: CurrentUser) -> RagAnswerResponse:
+    def answer(
+        self,
+        query: str,
+        current_user: CurrentUser,
+        metadata_filter: RetrievalFilter | None = None,
+    ) -> RagAnswerResponse:
         """只使用当前用户有权读取且证据充分的片段回答。 / Answers only with sufficiently relevant chunks readable by the current user."""
 
         allowed_version_ids = (
@@ -60,6 +70,7 @@ class RagService:
             query=query,
             allowed_document_version_ids=allowed_version_ids,
             limit=self._retrieval_limit,
+            metadata_filter=metadata_filter,
         )
         evidence = [chunk for chunk in retrieved if chunk.score >= self._minimum_score]
         if not evidence:
@@ -92,6 +103,8 @@ class RagService:
                 document_id=chunk.document_id,
                 document_version_id=chunk.document_version_id,
                 source_name=chunk.source_name,
+                location=RagService._build_location(chunk),
+                score=chunk.score,
                 content_type=chunk.content_type,
                 page=chunk.page,
                 section=chunk.section,
@@ -99,8 +112,31 @@ class RagService:
                 cell_range=chunk.cell_range,
                 rows=chunk.rows,
             )
-            key = tuple(citation.model_dump().values())
+            key = (
+                citation.document_version_id,
+                citation.content_type,
+                citation.page,
+                citation.section,
+                citation.sheet,
+                citation.cell_range,
+                citation.rows,
+            )
             if key not in seen:
                 seen.add(key)
                 citations.append(citation)
         return citations
+
+    @staticmethod
+    def _build_location(chunk: RetrievedChunk) -> str:
+        """根据可信 metadata 创建适合界面显示的来源位置。 / Builds a UI-ready source location from trusted metadata."""
+
+        parts = [chunk.source_name]
+        if chunk.page is not None:
+            parts.append(f"Page {chunk.page}")
+        if chunk.sheet is not None:
+            parts.append(f"Sheet {chunk.sheet}")
+        if chunk.cell_range is not None:
+            parts.append(chunk.cell_range)
+        elif chunk.rows is not None:
+            parts.append(f"Rows {chunk.rows}")
+        return " / ".join(parts)

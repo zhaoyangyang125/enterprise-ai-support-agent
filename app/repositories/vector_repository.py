@@ -3,7 +3,7 @@ import re
 from pathlib import Path
 from typing import Any, Protocol
 
-from app.schemas.rag import IndexedChunk, RetrievedChunk
+from app.schemas.rag import IndexedChunk, RetrievedChunk, RetrievalFilter
 from app.services.embedding_service import EmbeddingProvider
 
 
@@ -15,6 +15,7 @@ class VectorRepository(Protocol):
         query: str,
         allowed_document_version_ids: frozenset[str],
         limit: int,
+        metadata_filter: RetrievalFilter | None = None,
     ) -> list[RetrievedChunk]:
         """只在允许的文档版本内检索相关片段。 / Searches relevant chunks only within allowed document versions."""
 
@@ -43,6 +44,7 @@ class InMemoryVectorRepository:
         query: str,
         allowed_document_version_ids: frozenset[str],
         limit: int,
+        metadata_filter: RetrievalFilter | None = None,
     ) -> list[RetrievedChunk]:
         """先按权限版本过滤，再计算字符 n-gram 相似度。 / Filters by authorized versions before calculating character n-gram similarity."""
 
@@ -50,6 +52,7 @@ class InMemoryVectorRepository:
             chunk
             for chunk in self._chunks
             if chunk.document_version_id in allowed_document_version_ids
+            and self._matches_metadata_filter(chunk, metadata_filter)
         )
         ranked = [
             RetrievedChunk(**chunk.model_dump(), score=self._similarity(query, chunk.content))
@@ -57,6 +60,27 @@ class InMemoryVectorRepository:
         ]
         ranked.sort(key=lambda chunk: chunk.score, reverse=True)
         return ranked[:limit]
+
+    @staticmethod
+    def _matches_metadata_filter(
+        chunk: IndexedChunk,
+        metadata_filter: RetrievalFilter | None,
+    ) -> bool:
+        """在权限过滤之后应用只会缩小结果集的 metadata 条件。 / Applies metadata conditions that only narrow the authorized result set."""
+
+        if metadata_filter is None:
+            return True
+        return all(
+            (
+                not metadata_filter.document_ids
+                or chunk.document_id in metadata_filter.document_ids,
+                not metadata_filter.source_names
+                or chunk.source_name in metadata_filter.source_names,
+                not metadata_filter.content_types
+                or chunk.content_type in metadata_filter.content_types,
+                not metadata_filter.sheets or chunk.sheet in metadata_filter.sheets,
+            )
+        )
 
     @staticmethod
     def _similarity(left: str, right: str) -> float:
@@ -132,6 +156,7 @@ class ChromaVectorRepository:
         query: str,
         allowed_document_version_ids: frozenset[str],
         limit: int,
+        metadata_filter: RetrievalFilter | None = None,
     ) -> list[RetrievedChunk]:
         """在 Chroma query 的 where 条件中应用允许版本集合。 / Applies the allowed version set in the Chroma query where clause."""
 
@@ -140,11 +165,10 @@ class ChromaVectorRepository:
         result = self._collection.query(
             query_embeddings=self._embedding_provider.embed([query]),
             n_results=limit,
-            where={
-                "document_version_id": {
-                    "$in": sorted(allowed_document_version_ids)
-                }
-            },
+            where=self._build_where(
+                allowed_document_version_ids,
+                metadata_filter,
+            ),
             include=["documents", "metadatas", "distances"],
         )
         ids = result["ids"][0]
@@ -181,6 +205,33 @@ class ChromaVectorRepository:
                 )
             )
         return chunks
+
+    @staticmethod
+    def _build_where(
+        allowed_document_version_ids: frozenset[str],
+        metadata_filter: RetrievalFilter | None,
+    ) -> dict[str, object]:
+        """用 AND 合并强制权限条件与可选 metadata 条件。 / Combines mandatory authorization and optional metadata conditions with AND."""
+
+        conditions: list[dict[str, object]] = [
+            {
+                "document_version_id": {
+                    "$in": sorted(allowed_document_version_ids)
+                }
+            }
+        ]
+        if metadata_filter is not None:
+            for key, values in (
+                ("document_id", metadata_filter.document_ids),
+                ("source_name", metadata_filter.source_names),
+                ("content_type", metadata_filter.content_types),
+                ("sheet", metadata_filter.sheets),
+            ):
+                if values:
+                    conditions.append({key: {"$in": sorted(values)}})
+        if len(conditions) == 1:
+            return conditions[0]
+        return {"$and": conditions}
 
     @staticmethod
     def _to_metadata(chunk: IndexedChunk) -> dict[str, str | int | float | bool]:

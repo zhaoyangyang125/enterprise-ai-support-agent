@@ -1,5 +1,5 @@
 from app.repositories.vector_repository import ChromaVectorRepository
-from app.schemas.rag import IndexedChunk
+from app.schemas.rag import IndexedChunk, RetrievalFilter
 from app.services.embedding_service import HashEmbeddingProvider
 
 
@@ -98,3 +98,59 @@ def test_chroma_round_trips_structured_excel_citation_metadata(tmp_path) -> None
     assert result[0].sheet == "機能仕様"
     assert result[0].cell_range == "A8:H12"
     assert result[0].rows == "10:12"
+
+
+def test_chroma_combines_authorization_with_metadata_filters(tmp_path) -> None:
+    """验证 Chroma 使用 AND 同时执行版本权限与结构 metadata 过滤。 / Verifies Chroma combines version authorization and structural metadata filters with AND."""
+
+    repository = ChromaVectorRepository.persistent(
+        path=tmp_path / "chroma",
+        collection_name="filtered_documents",
+        embedding_provider=HashEmbeddingProvider(dimensions=64),
+    )
+    repository.upsert_chunks(
+        [
+            IndexedChunk(
+                chunk_id="ALLOWED-PDF",
+                document_id="POLICY",
+                document_version_id="ALLOWED-PDF-V1",
+                content="動画画面遷移は禁止",
+                source_name="policy.pdf",
+                page=2,
+            ),
+            IndexedChunk(
+                chunk_id="ALLOWED-XLSX",
+                document_id="SPEC",
+                document_version_id="ALLOWED-XLSX-V1",
+                content="動画画面遷移は禁止",
+                source_name="spec.xlsx",
+                content_type="table",
+                sheet="画面遷移",
+                cell_range="A4:F8",
+            ),
+            IndexedChunk(
+                chunk_id="SECRET-XLSX",
+                document_id="SECRET",
+                document_version_id="SECRET-V1",
+                content="動画画面遷移は禁止",
+                source_name="secret.xlsx",
+                content_type="table",
+                sheet="画面遷移",
+                cell_range="A1:F3",
+            ),
+        ]
+    )
+
+    result = repository.search(
+        query="動画画面遷移",
+        allowed_document_version_ids=frozenset(
+            {"ALLOWED-PDF-V1", "ALLOWED-XLSX-V1"}
+        ),
+        limit=5,
+        metadata_filter=RetrievalFilter(
+            content_types=frozenset({"table"}),
+            sheets=frozenset({"画面遷移"}),
+        ),
+    )
+
+    assert [chunk.chunk_id for chunk in result] == ["ALLOWED-XLSX"]

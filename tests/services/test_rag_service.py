@@ -1,5 +1,5 @@
 from app.auth.context import CurrentUser
-from app.schemas.rag import RagAnswerResponse, RetrievedChunk
+from app.schemas.rag import RagAnswerResponse, RetrievedChunk, RetrievalFilter
 from app.services.rag_service import NO_EVIDENCE_MESSAGE, RagService
 
 
@@ -29,17 +29,22 @@ class FakeVectorRepository:
         """保存预设检索结果并初始化调用记录。 / Stores preset retrieval results and initializes call tracking."""
 
         self._chunks = chunks
-        self.calls: list[tuple[str, frozenset[str], int]] = []
+        self.calls: list[
+            tuple[str, frozenset[str], int, RetrievalFilter | None]
+        ] = []
 
     def search(
         self,
         query: str,
         allowed_document_version_ids: frozenset[str],
         limit: int,
+        metadata_filter: RetrievalFilter | None = None,
     ) -> list[RetrievedChunk]:
         """记录检索条件并返回预设证据。 / Records retrieval parameters and returns preset evidence."""
 
-        self.calls.append((query, allowed_document_version_ids, limit))
+        self.calls.append(
+            (query, allowed_document_version_ids, limit, metadata_filter)
+        )
         return self._chunks
 
 
@@ -95,6 +100,8 @@ def test_answer_uses_authorized_versions_and_metadata_citation() -> None:
         "document_id": "TRAVEL_POLICY",
         "document_version_id": "TRAVEL_POLICY-V2",
         "source_name": "TravelPolicy_v2.pdf",
+        "location": "TravelPolicy_v2.pdf / Page 3",
+        "score": 0.9,
         "content_type": "paragraph",
         "page": 3,
         "section": "2.1 国内出張",
@@ -103,7 +110,7 @@ def test_answer_uses_authorized_versions_and_metadata_citation() -> None:
         "rows": None,
     }
     assert vector_repository.calls == [
-        ("国内出差住宿费上限是多少？", frozenset({"TRAVEL_POLICY-V2"}), 5)
+        ("国内出差住宿费上限是多少？", frozenset({"TRAVEL_POLICY-V2"}), 5, None)
     ]
     assert len(answer_generator.calls) == 1
 
@@ -167,3 +174,74 @@ def test_answer_returns_no_evidence_below_score_threshold() -> None:
     assert result.evidence_found is False
     assert result.answer == NO_EVIDENCE_MESSAGE
     assert answer_generator.calls == []
+
+
+def test_answer_passes_metadata_filter_and_refuses_when_no_result() -> None:
+    """验证 metadata 条件传到 Repository，过滤后无结果时不调用回答生成器。 / Verifies metadata filters reach the repository and empty filtered results skip answer generation."""
+
+    metadata_filter = RetrievalFilter(
+        content_types=frozenset({"table"}),
+        sheets=frozenset({"CAN信号"}),
+    )
+    vector_repository = FakeVectorRepository([])
+    answer_generator = FakeAnswerGenerator()
+    service = RagService(
+        authorization_service=FakeAuthorizationService(
+            frozenset({"HMI-SPEC-V1"})
+        ),
+        vector_repository=vector_repository,
+        answer_generator=answer_generator,
+    )
+
+    result = service.answer(
+        "VehicleSpeedの期待値",
+        CurrentUser(user_id="U001"),
+        metadata_filter,
+    )
+
+    assert result.evidence_found is False
+    assert vector_repository.calls == [
+        (
+            "VehicleSpeedの期待値",
+            frozenset({"HMI-SPEC-V1"}),
+            5,
+            metadata_filter,
+        )
+    ]
+    assert answer_generator.calls == []
+
+
+def test_citation_formats_excel_location_and_deduplicates_same_source() -> None:
+    """验证 Excel Citation 显示 Sheet/Range，并对同一来源定位去重。 / Verifies Excel citations display sheet/range and deduplicate the same source location."""
+
+    first = RetrievedChunk(
+        chunk_id="XLSX-001-A",
+        document_id="HMI-SPEC",
+        document_version_id="HMI-SPEC-V1",
+        content="HMI-AC-001 expectation",
+        score=0.92,
+        source_name="fictional_hmi_test_spec.xlsx",
+        content_type="table",
+        sheet="機能仕様",
+        cell_range="A8:H12",
+        rows="10:12",
+    )
+    duplicate_location = first.model_copy(
+        update={"chunk_id": "XLSX-001-B", "content": "related row", "score": 0.8}
+    )
+    service = RagService(
+        authorization_service=FakeAuthorizationService(
+            frozenset({"HMI-SPEC-V1"})
+        ),
+        vector_repository=FakeVectorRepository([first, duplicate_location]),
+        answer_generator=FakeAnswerGenerator(),
+        minimum_score=0.5,
+    )
+
+    result = service.answer("HMI-AC-001", CurrentUser(user_id="U001"))
+
+    assert len(result.sources) == 1
+    assert result.sources[0].location == (
+        "fictional_hmi_test_spec.xlsx / Sheet 機能仕様 / A8:H12"
+    )
+    assert result.sources[0].score == 0.92

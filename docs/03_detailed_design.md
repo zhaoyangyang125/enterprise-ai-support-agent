@@ -11,7 +11,7 @@
 | 项目 | 内容 |
 |---|---|
 | 文档名称 | Project 3 详细设计书 |
-| Document Version | v0.12-draft |
+| Document Version | v0.13-draft |
 | Status | Draft（草稿，尚未正式 Review） |
 | Created Date | 2026-08-24 |
 | Last Updated | 2026-09-05 |
@@ -60,6 +60,7 @@
 | v0.10 | 2026-09-04 | 确定 Level 2 复杂文字文档范围、目标 ParsedBlock metadata、架空 HMI 样本和测试矩阵；OCR/视觉理解留到后续版本 | Phase 4 Decision | Draft |
 | v0.11 | 2026-09-04 | 实现 Excel Region Detection、多行表头路径、非破坏式合并单元格视图和 ParsedBlock 新 metadata | Phase 4 Implementation + Verification | Draft |
 | v0.12 | 2026-09-05 | 增强文字型 PDF 的重复页眉页脚清理、标题/段落识别与页内 Chunk，并将结构 metadata 贯通到 Chroma 和 Citation | Phase 4 Implementation + Verification | Draft |
+| v0.13 | 2026-09-05 | 增加不会扩大权限的 metadata Filtering、可显示 Citation 定位与分数，以及六题小型检索回归评测 | Phase 4 Implementation + Verification | Draft |
 
 变更历史只记录影响接口、数据模型、权限、异常处理或测试预期的重要变化；排版和错别字修正不单独增加版本。
 
@@ -367,6 +368,10 @@ No Evidence 时：
 | `TC-API-CHAT-001` | API | 有认证上下文和有效消息 | 将完整 `CurrentUser` 与消息传给 Agent，返回统一 Schema |
 | `TC-API-CHAT-002` | API | 缺少 `X-User-Id` | HTTP 422，不进入 Agent |
 | `TC-API-CHAT-003` | API | 空消息 | HTTP 422，不进入 Agent |
+| `TC-RAG-FILTER-101` | Service Unit | metadata 过滤后无结果 | 返回 No Evidence，不调用 Answer Generator |
+| `TC-RAG-CITE-101` | Service Unit | Excel 同一来源多个 Chunk | Citation 去重并显示 Sheet/Cell Range 与最高分数 |
+| `TC-VECTOR-FILTER-101` | Repository Integration | 权限集合 + metadata 条件 | 使用 AND，只返回同时满足两个条件的 Chunk |
+| `TC-EVAL-101` | Evaluation | 4 个有答案问题 + 2 个无答案问题 | 分别计算 Retrieval/Source/No Evidence 指标 |
 
 ### 4.8 Chat / Agent / Tool 接入
 
@@ -399,6 +404,43 @@ Authentication: Required
 - Tool 只做受控桥接，不承载 Repository 查询或核心业务规则。
 - `GetLeaveBalanceTool` 只把 `CurrentUser` 交给 `LeaveService`。
 - `SearchDocumentTool` 把 query 和 `CurrentUser` 交给 `RagService`。
+
+### 4.9 Day 4 Metadata Filtering、Citation 与 Evaluation
+
+知识查询可以携带可选条件：
+
+```json
+{
+  "message": "VehicleSpeed 的期待值是什么？",
+  "retrieval_filter": {
+    "content_types": ["table"],
+    "sheets": ["CAN信号"]
+  }
+}
+```
+
+`RetrievalFilter` 只允许按 `document_ids`、`source_names`、`content_types` 和 `sheets` 缩小候选范围。它不包含 `allowed_document_version_ids`，不能代替认证或授权结果。
+
+Chroma 查询条件：
+
+```text
+document_version_id IN authorization result
+AND optional document_id
+AND optional source_name
+AND optional content_type
+AND optional sheet
+```
+
+强制权限条件始终存在。即使客户端指定了无权访问的文件名或 Sheet，也不会把该版本加入允许集合。InMemory Repository 与 Chroma Repository 使用相同过滤语义。
+
+`SourceCitation` 在结构化 metadata 之外增加：
+
+- `location`：程序生成的界面显示文字，例如 `policy.pdf / Page 2` 或 `spec.xlsx / Sheet CAN信号 / A5:F9`。
+- `score`：Repository 返回的相关度分数，范围为 0～1；它不是概率，生产阈值仍需评测校准。
+
+相同文档版本、内容类型和原文定位的多个 Chunk 只保留一个 Citation。检索结果已按分数从高到低排列，因此去重后保留最高分来源。
+
+小型评测固定 6 题：4 题有答案、2 题无答案/安全场景。指标定义为 Retrieval Hit Rate、Source Hit Rate、No Evidence Accuracy 和本机平均检索耗时。详细结果见 `docs/evaluation/day4_retrieval_report.md`。该评测仅用于回归，不代表生产准确率。
 
 ---
 
@@ -737,6 +779,9 @@ Day 3 使用完全虚构的三页日语 HMI 方针 PDF 做真实文件测试，�
 | DD-034 | PDF Chunk 不跨页；标题写入 `section`，超长文本只在当前页内切分 | Phase 4 Implementation | Confirmed |
 | DD-035 | `content_type` 与 `cell_range` 从 ParsedBlock 贯通 IndexedChunk、Chroma 和 SourceCitation；旧索引缺少类型时默认 `paragraph` | Phase 4 Implementation | Confirmed |
 | DD-036 | PDF 回归测试使用完全虚构、可公开的日语 HMI 方针文件；本轮不加入 OCR 或视觉理解 | Phase 4 Decision + Verification | Confirmed |
+| DD-037 | RetrievalFilter 只能按白名单 metadata 缩小候选范围；权限版本集合仍由 AuthorizationService 决定，并在 Chroma 中使用 AND 合并 | Phase 4 Implementation + Security Verification | Confirmed |
+| DD-038 | Citation 的 `location` 与 `score` 由检索 metadata 和结果分数确定性生成；相同原文定位去重并保留最高分结果 | Phase 4 Implementation | Confirmed |
+| DD-039 | Day 4 使用 6 题虚构数据建立回归评测，分别报告检索、来源和无答案指标，不把小样本 100% 描述为生产准确率 | Phase 4 Evaluation Decision | Confirmed |
 
 ---
 
@@ -795,6 +840,15 @@ Basic Design §9 + Phase 4 DD-033..036
 -> PdfDocumentParser
 -> ParsedBlock / IndexedChunk / Chroma / SourceCitation
 -> TC-PARSE-PDF-101..102 / TC-VECTOR-003
+```
+
+```text
+REQ-F-001..004 / NFR-SEC-001 + Phase 4 DD-037..039
+-> RetrievalFilter / Chroma AND where
+-> RagService No Evidence / structured SourceCitation
+-> app/evaluation/sample_suite.py
+-> docs/evaluation/day4_retrieval_report.md
+-> TC-RAG-FILTER-101 / TC-RAG-CITE-101 / TC-VECTOR-FILTER-101 / TC-EVAL-101
 ```
 
 ```text

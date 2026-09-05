@@ -4,16 +4,16 @@ Last updated: 2026-09-05
 
 ## Current Scope
 
-Milestone 6 / Day 3: text-layer PDF enhancement and end-to-end structured metadata.
+Milestone 6 / Day 4: structured Citation, metadata Filtering, and small retrieval evaluation.
 
 ## 2026-09-04 隔离开发说明
 
 - 原复习目录：`D:\AI\enterprise-ai-support-agent`，保持在 `feature/phase4-core-backend`，未修改。
 - 独立开发目录：`D:\AI\enterprise-ai-support-agent-complex-doc`。
-- 当前开发分支：`feature/complex-doc-day3-pdf-metadata`。
+- 当前开发分支：`feature/complex-doc-day4-citation-evaluation`。
 - 开发起点：提交 `8a1256a`。
 - 原目录的未跟踪学习文件没有复制到开发工作树。
-- Day 1～Day 3 均只在独立工作树开发，原复习目录没有被本轮代码覆盖。
+- Day 1～Day 4 均只在独立工作树开发，原复习目录没有被本轮代码覆盖。
 
 ## Day 1 已完成
 
@@ -52,6 +52,19 @@ Milestone 6 / Day 3: text-layer PDF enhancement and end-to-end structured metada
 - 使用完全虚构的三页日语 HMI PDF 进行真实文件解析测试，并逐页渲染检查。
 - Day 3 定向测试：`16 passed`；项目全量：`50 passed`，保留 1 条第三方 Starlette 弃用警告。
 - Day 3 已保存到当前本地分支的独立提交。
+
+## Day 4 已完成
+
+- 当前开发分支：`feature/complex-doc-day4-citation-evaluation`，从 Day 3 提交 `e1bddee` 创建。
+- 新增 `RetrievalFilter`，支持按 document、文件名、结构类型和 Sheet 缩小检索范围。
+- Authentication/Authorization 的版本条件与 metadata 条件在 Chroma `where` 中使用 AND 合并；过滤条件不能扩大权限。
+- Chat API、AgentRouter、SearchDocumentTool 和 RagService 已贯通可选过滤条件。
+- Citation 新增程序生成的 `location` 与检索 `score`，支持 PDF Page 和 Excel Sheet/Cell Range 显示。
+- 相同原文定位的 Citation 去重，保留检索顺序中最高分结果。
+- 新增通用检索评测模块与六题虚构 HMI 回归用例。
+- 评测结果：Retrieval Hit Rate、Source Hit Rate、No Evidence Accuracy 均为 `1.0`；只代表固定小样本回归通过。
+- Day 4 定向测试：`21 passed`；项目全量：`58 passed`，保留 1 条第三方 Starlette 弃用警告。
+- Day 4 已保存到当前本地分支的独立提交；未执行 push。
 
 ## Completed
 
@@ -241,11 +254,12 @@ Milestone 6 / Day 3: text-layer PDF enhancement and end-to-end structured metada
 
 ## Git Status
 
-- Current development branch: `feature/complex-doc-day3-pdf-metadata`
+- Current development branch: `feature/complex-doc-day4-citation-evaluation`
 - Original review branch remains: `feature/phase4-core-backend`
 - Day 1 is stored in local commit `ab09e45`.
 - Day 2 is stored in local commit `2aa45b5`.
 - Day 3 is stored in the current branch's dedicated local commit.
+- Day 4 is stored in the current branch's dedicated local commit.
 - Vertical slice 1 is stored in local commit `9acf307`.
 - Authorized RAG core is stored in local commit `8b6d8fc`.
 - Chat/Agent/Tool integration is stored in local commit `9e1a513`.
@@ -258,8 +272,8 @@ Milestone 6 / Day 3: text-layer PDF enhancement and end-to-end structured metada
 
 ## Next Step
 
-Day 3 已安全保存。Day 4 开发结构化 Citation、metadata Filtering 和小型 Evaluation，重点验证检索前权限过滤、无证据拒答以及 PDF/Excel 定位信息；不开发 OCR 或视觉理解。
+Day 4 已安全保存。Day 5 开发本地演示界面：文档上传、处理状态、聊天回答和 Citation 展示；不加入 OCR 或视觉理解。
 
 ## Handoff Summary
 
-三条业务主链、Document Ingestion 和本地 Chroma 已保存于本地提交。复杂文档 Day 1、Day 2、Day 3 已分别提交；Day 3 的文字型 PDF 增强和 metadata 贯通已通过 50 项全量测试。尚未执行 push 或 merge，原复习目录和其中的学习文件未被本轮开发覆盖。
+三条业务主链、Document Ingestion 和本地 Chroma 已保存于本地提交。复杂文档 Day 1～Day 4 已分别提交；Day 4 的过滤、Citation 和评测已通过 58 项全量测试。尚未执行 push 或 merge，原复习目录和其中的学习文件未被本轮开发覆盖。

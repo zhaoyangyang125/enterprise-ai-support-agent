@@ -388,3 +388,57 @@ Day 2 已让 Excel Parser 产生 `content_type` 和 `cell_range`。Day 3 将这�
 - 页眉页脚删除应使用保守规则，并限制在页面边缘。
 - 不跨页 Chunk 是为了让页码 Citation 可验证。
 - metadata 必须从 Parser 一直贯通到检索结果，不能在回答阶段临时猜测。
+
+## 2026-09-05 — Milestone 6 / Day 4: Filtering、Citation 与 Evaluation
+
+### 本次目标
+
+让用户能够按文档结构缩小搜索范围，同时确保这些条件永远不能绕过原有权限过滤；并用可重复运行的指标验证检索和来源定位。
+
+### 调用链
+
+```text
+ChatRequest.retrieval_filter
+-> AgentRouter
+-> SearchDocumentTool
+-> RagService
+-> AuthorizationService 取得允许版本
+-> VectorRepository.search(允许版本, metadata 条件)
+-> Chroma AND where
+-> evidence threshold
+-> SourceCitation(location, score)
+```
+
+### 权限与筛选的区别
+
+- 权限回答“这个用户能不能看到该文档”，只能由可信 Authentication Context 和 Business DB 决定。
+- metadata filter 回答“用户想在已经允许的资料中看哪一部分”，例如只看 Excel Table 或 `CAN信号` Sheet。
+- Filter 只能缩小集合，不能把新的文档版本加入权限集合。
+
+### Citation
+
+Citation 继续保留结构字段，并增加适合界面显示的 `location` 和检索 `score`。PDF 显示 `文件 / Page N`，Excel 显示 `文件 / Sheet / Cell Range`。这些字段由程序组装，不由 LLM 生成。
+
+同一原文位置可能被多个 Chunk 命中。去重键不包含 score，因此排序靠前的最高分结果被保留，不会在界面显示重复来源。
+
+### 小型评测
+
+评测把有答案问题和无答案问题分开统计：
+
+- Retrieval Hit Rate：Top-K 是否包含预期 Chunk。
+- Source Hit Rate：是否命中人工确认的文件和位置。
+- No Evidence Accuracy：负例是否真的返回空集合。
+
+六题固定回归结果均为 1.0，但这不能解释成生产准确率，因为数据量很小，且使用的是确定性本地检索。正式阈值和模型质量需要更大的人工标注集。
+
+### 验证
+
+- Repository、RAG、Agent、API 和 Evaluation 定向测试：21 passed。
+- 全量测试：58 passed。
+- 1 条第三方 Starlette 弃用警告仍不影响行为。
+
+### 面试要点
+
+- 权限条件和用户筛选条件必须使用 AND，不能让筛选参数改变授权结果。
+- Citation 的定位和分数属于程序数据，不是模型生成文本。
+- 指标必须先定义再计算；小型回归测试不能冒充线上准确率。

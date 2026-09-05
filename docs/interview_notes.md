@@ -261,6 +261,32 @@ PDFではPage情報を保持し、ExcelではSheet、Header、Row、Merged Cell�
 
 中文记忆：诚实说明只支持文字型 PDF；OCR 和视觉理解属于以后版本。
 
+### 7.23 「Metadata Filteringと権限チェックの違いは何ですか」
+
+権限チェックは、現在のユーザーがどの文書Versionを閲覧できるかを決定します。これは認証ContextとBusiness Databaseの権限情報から決まり、クライアントが変更することはできません。
+
+Metadata Filteringは、許可済みの文書集合を、ファイル名、Content Type、Sheetなどでさらに絞り込む機能です。Chromaでは、許可された`document_version_id`とMetadata条件をANDで結合しています。そのため、Filterによって権限範囲を広げることはできません。
+
+中文记忆：权限决定“能看什么”，Filter 决定“在能看的资料里只搜什么”；两者是 AND。
+
+### 7.24 「Citationをどのように画面表示しますか」
+
+PDFの場合は`ファイル名 / Page N`、Excelの場合は`ファイル名 / Sheet名 / Cell Range`という表示文字をMetadataからプログラムで作成します。また、検索結果のScoreも0から1の範囲で返します。
+
+同じ原文位置から複数のChunkが取得された場合は、文書Versionと位置情報で重複を削除し、検索順序が最も高い結果を残します。LLMにページ番号やCell Rangeを生成させません。
+
+中文记忆：界面文字只是 metadata 的格式化结果；来源位置不是 LLM 写出来的。
+
+### 7.25 「検索品質をどのように評価しましたか」
+
+まず小規模な回帰評価として、架空HMIデータを使った6問を作成しました。4問は回答あり、2問は権限または存在しないSheetによる回答なしのケースです。
+
+評価指標は、期待ChunkがTop-Kに入るRetrieval Hit Rate、期待したPageまたはSheet/Cell Rangeが一致するSource Hit Rate、回答なしケースを正しく空結果にできるNo Evidence Accuracyです。
+
+今回の固定データではすべて1.0でしたが、これは本番精度100%を意味しません。実際の品質評価には、より多くの人手確認済み質問、Recall@K、エラー分類、閾値調整が必要です。
+
+中文记忆：先说明指标定义，再诚实说明“6 题全过”只是回归测试，不是生产准确率。
+
 ## 8. 日语关键词与读法
 
 | 日语 | 读法 | 中文 |

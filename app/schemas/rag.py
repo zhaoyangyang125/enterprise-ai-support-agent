@@ -3,6 +3,17 @@ from pydantic import BaseModel, ConfigDict, Field
 from app.schemas.document import DocumentContentType
 
 
+class RetrievalFilter(BaseModel):
+    """定义只能缩小授权检索范围的可选 metadata 条件。 / Defines optional metadata conditions that can only narrow authorized retrieval."""
+
+    model_config = ConfigDict(frozen=True)
+
+    document_ids: frozenset[str] = Field(default_factory=frozenset)
+    source_names: frozenset[str] = Field(default_factory=frozenset)
+    content_types: frozenset[DocumentContentType] = Field(default_factory=frozenset)
+    sheets: frozenset[str] = Field(default_factory=frozenset)
+
+
 class IndexedChunk(BaseModel):
     """表示存入向量检索层的文档片段和来源信息。 / Represents an indexed document chunk and its source metadata."""
 
@@ -35,6 +46,8 @@ class SourceCitation(BaseModel):
     document_id: str
     document_version_id: str
     source_name: str
+    location: str
+    score: float = Field(ge=0.0, le=1.0)
     content_type: DocumentContentType = "paragraph"
     page: int | None = None
     section: str | None = None
