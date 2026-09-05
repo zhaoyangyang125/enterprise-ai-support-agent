@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="Enterprise AI Support Agent 本地演示工作台"
+    />
+    <title>Enterprise AI Support Agent</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand">
+        <div class="brand-mark" aria-hidden="true">EA</div>
+        <div>
+          <p class="eyebrow">ENTERPRISE KNOWLEDGE WORKSPACE</p>
+          <h1>AI Support Agent</h1>
+        </div>
+      </div>
+      <div class="runtime-badge">
+        <span class="status-dot" aria-hidden="true"></span>
+        Local secure demo
+      </div>
+    </header>
+
+    <section class="identity-bar" aria-label="开发身份设置">
+      <div class="identity-copy">
+        <strong>开发身份 / Mock Authentication</strong>
+        <span>这些值会转换为后端的 CurrentUser。</span>
+      </div>
+      <label>
+        User ID
+        <input id="user-id" value="U001" autocomplete="off" />
+      </label>
+      <label>
+        Department
+        <input id="department-id" value="D-SALES" autocomplete="off" />
+      </label>
+      <label>
+        Roles
+        <input id="role-ids" value="EMPLOYEE,ADMIN" autocomplete="off" />
+      </label>
+    </section>
+
+    <main class="workspace-grid">
+      <section class="panel chat-panel" aria-labelledby="chat-title">
+        <div class="panel-header">
+          <div>
+            <p class="section-kicker">AUTHORIZED ASSISTANT</p>
+            <h2 id="chat-title">公司制度与业务查询</h2>
+          </div>
+          <span class="security-chip">检索前权限过滤</span>
+        </div>
+
+        <div id="chat-feed" class="chat-feed" aria-live="polite">
+          <article class="message assistant-message">
+            <div class="message-label">Assistant</div>
+            <p>你好。我只会使用你有权访问且证据充分的资料回答，并显示可追踪的来源位置。</p>
+          </article>
+        </div>
+
+        <div class="quick-prompts" aria-label="示例问题">
+          <button type="button" data-prompt="我的剩余年假是多少？">查询年假余额</button>
+          <button type="button" data-prompt="走行中の動画画面遷移は許可されますか？">HMI 安全规则</button>
+          <button type="button" data-prompt="VehicleSpeed の期待値は何ですか？">CAN 信号规格</button>
+        </div>
+
+        <form id="chat-form" class="composer">
+          <div class="filter-row">
+            <label>
+              内容类型
+              <select id="content-type">
+                <option value="">全部</option>
+                <option value="paragraph">正文 paragraph</option>
+                <option value="table">表格 table</option>
+                <option value="key_value">属性 key-value</option>
+                <option value="note">备注 note</option>
+                <option value="title">标题 title</option>
+              </select>
+            </label>
+            <label>
+              Sheet（可选）
+              <input id="sheet-filter" placeholder="例如：CAN信号" autocomplete="off" />
+            </label>
+          </div>
+          <label class="message-input-label" for="message">输入问题</label>
+          <div class="composer-row">
+            <textarea
+              id="message"
+              rows="3"
+              maxlength="2000"
+              placeholder="例如：国内出差住宿费上限是多少？"
+              required
+            ></textarea>
+            <button id="send-button" class="primary-button" type="submit">
+              <span>发送</span>
+              <small>Send</small>
+            </button>
+          </div>
+        </form>
+      </section>
+
+      <aside class="side-column">
+        <section class="panel upload-panel" aria-labelledby="upload-title">
+          <div class="panel-header compact">
+            <div>
+              <p class="section-kicker">DOCUMENT INGESTION</p>
+              <h2 id="upload-title">文档上传与索引</h2>
+            </div>
+            <span class="admin-chip">ADMIN</span>
+          </div>
+
+          <form id="upload-form" class="upload-form">
+            <label class="file-drop" for="document-file">
+              <span class="file-icon" aria-hidden="true">＋</span>
+              <strong id="file-label">选择 PDF 或 Excel</strong>
+              <small>最大 10 MB · 不支持扫描件 OCR</small>
+              <input
+                id="document-file"
+                name="file"
+                type="file"
+                accept=".pdf,.xlsx"
+                required
+              />
+            </label>
+
+            <div class="form-grid">
+              <label>
+                Document ID
+                <input id="document-id" name="document_id" placeholder="HMI-POLICY" required />
+              </label>
+              <label>
+                Version ID
+                <input
+                  id="document-version-id"
+                  name="document_version_id"
+                  placeholder="HMI-POLICY-V1"
+                  required
+                />
+              </label>
+            </div>
+            <label>
+              标题 / Title
+              <input id="document-title" name="title" placeholder="HMI 安全方针" required />
+            </label>
+            <label>
+              版本标签 / Version label
+              <input id="version-label" name="version_label" value="v1.0" required />
+            </label>
+
+            <button id="upload-button" class="secondary-button" type="submit">
+              上传、解析并建立索引
+            </button>
+            <p id="upload-feedback" class="form-feedback" aria-live="polite"></p>
+          </form>
+        </section>
+
+        <section class="panel status-panel" aria-labelledby="status-title">
+          <div class="panel-header compact">
+            <div>
+              <p class="section-kicker">PROCESSING STATUS</p>
+              <h2 id="status-title">文档版本状态</h2>
+            </div>
+            <button id="refresh-status" class="icon-button" type="button">刷新</button>
+          </div>
+          <div id="document-status-list" class="status-list" aria-live="polite">
+            <p class="empty-state">正在读取状态…</p>
+          </div>
+        </section>
+      </aside>
+    </main>
+
+    <footer>
+      <span>Python · FastAPI · SQLite · Chroma</span>
+      <span>所有示例资料均为完全虚构数据</span>
+    </footer>
+
+    <script src="/static/app.js" defer></script>
+  </body>
+</html>

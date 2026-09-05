@@ -15,11 +15,13 @@ class LocalDocumentStorage:
         source_path: Path,
         document_id: str,
         document_version_id: str,
+        file_name: str | None = None,
     ) -> Path:
         """复制原文件到稳定的文档版本目录。 / Copies the original file into a stable document-version directory."""
 
         target_directory = self._root / document_id / document_version_id
         target_directory.mkdir(parents=True, exist_ok=True)
-        target_path = target_directory / source_path.name
+        safe_file_name = Path(file_name or source_path.name).name
+        target_path = target_directory / safe_file_name
         shutil.copy2(source_path, target_path)
         return target_path

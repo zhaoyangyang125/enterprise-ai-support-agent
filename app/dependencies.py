@@ -7,14 +7,18 @@ from sqlalchemy.orm import Session
 
 from app.agent.router import AgentRouter
 from app.db.session import get_db_session
+from app.document_processing.parsers import DocumentParserRegistry
+from app.document_processing.storage import LocalDocumentStorage
 from app.repositories.document_access_repository import (
     SqlAlchemyDocumentAccessRepository,
 )
 from app.repositories.leave_repository import SqlAlchemyLeaveRepository
 from app.repositories.leave_request_repository import SqlAlchemyLeaveRequestRepository
+from app.repositories.document_repository import SqlAlchemyDocumentRepository
 from app.repositories.vector_repository import ChromaVectorRepository
 from app.services.authorization_service import AuthorizationService
 from app.services.embedding_service import HashEmbeddingProvider
+from app.services.document_service import DocumentService
 from app.services.leave_service import LeaveService
 from app.services.leave_request_service import LeaveRequestService
 from app.services.rag_service import EvidenceOnlyAnswerGenerator, RagService
@@ -77,6 +81,25 @@ def get_rag_service(
         vector_repository=vector_repository,
         answer_generator=answer_generator,
     )
+
+
+def get_document_service(
+    session: Annotated[Session, Depends(get_db_session)],
+    vector_repository: Annotated[
+        ChromaVectorRepository,
+        Depends(get_vector_repository),
+    ],
+) -> DocumentService:
+    """组装文档上传、解析、存储和索引所需的 Service。 / Builds the service required for document upload, parsing, storage, and indexing."""
+
+    return DocumentService(
+        repository=SqlAlchemyDocumentRepository(session),
+        storage=LocalDocumentStorage(Path("document_storage")),
+        parser_registry=DocumentParserRegistry(),
+        vector_index=vector_repository,
+    )
+
+
 def get_agent_router(
     leave_service: Annotated[LeaveService, Depends(get_leave_service)],
     rag_service: Annotated[RagService, Depends(get_rag_service)],

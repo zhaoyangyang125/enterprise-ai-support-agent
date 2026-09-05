@@ -4,16 +4,16 @@ Last updated: 2026-09-05
 
 ## Current Scope
 
-Milestone 6 / Day 4: structured Citation, metadata Filtering, and small retrieval evaluation.
+Milestone 6 / Day 5: local demonstration UI, document upload, processing status, chat, and Citation display.
 
 ## 2026-09-04 隔离开发说明
 
 - 原复习目录：`D:\AI\enterprise-ai-support-agent`，保持在 `feature/phase4-core-backend`，未修改。
 - 独立开发目录：`D:\AI\enterprise-ai-support-agent-complex-doc`。
-- 当前开发分支：`feature/complex-doc-day4-citation-evaluation`。
+- 当前开发分支：`feature/complex-doc-day5-demo-ui`。
 - 开发起点：提交 `8a1256a`。
 - 原目录的未跟踪学习文件没有复制到开发工作树。
-- Day 1～Day 4 均只在独立工作树开发，原复习目录没有被本轮代码覆盖。
+- Day 1～Day 5 均只在独立工作树开发，原复习目录没有被本轮代码覆盖。
 
 ## Day 1 已完成
 
@@ -65,6 +65,20 @@ Milestone 6 / Day 4: structured Citation, metadata Filtering, and small retrieva
 - 评测结果：Retrieval Hit Rate、Source Hit Rate、No Evidence Accuracy 均为 `1.0`；只代表固定小样本回归通过。
 - Day 4 定向测试：`21 passed`；项目全量：`58 passed`，保留 1 条第三方 Starlette 弃用警告。
 - Day 4 已保存到当前本地分支的独立提交；未执行 push。
+
+## Day 5 已完成
+
+- 当前开发分支：`feature/complex-doc-day5-demo-ui`，从 Day 4 提交 `c65321b` 创建。
+- 使用 FastAPI + 原生 HTML/CSS/JavaScript 建立本地工作界面，没有引入独立前端框架。
+- 界面包含 Mock 身份、聊天、metadata 筛选、PDF/Excel 上传、文档状态和 Citation 展示。
+- 新增 ADMIN 文档上传和版本状态 API；上传仅允许 PDF/XLSX、非空且最大 10 MB。
+- 上传成功后给上传用户授予 read permission；非 ADMIN 请求返回 403。
+- API 响应不返回服务器存储路径。
+- 真实 E2E 首次发现 Citation 使用随机临时文件名，已将原始文件名从临时路径中独立传递并增加回归测试。
+- 修正后真实上传虚构 PDF 生成 12 个 Chunk，Chat 返回 Page 2 正确证据和原始文件名 Citation。
+- Day 5 相关测试 9 项通过；项目全量 65 项通过，保留 1 条第三方 Starlette 弃用警告。
+- Python compileall、JavaScript `node --check` 和 Git diff check 通过。
+- Day 5 已保存到当前本地分支的独立提交；未执行 push。
 
 ## Completed
 
@@ -254,12 +268,13 @@ Milestone 6 / Day 4: structured Citation, metadata Filtering, and small retrieva
 
 ## Git Status
 
-- Current development branch: `feature/complex-doc-day4-citation-evaluation`
+- Current development branch: `feature/complex-doc-day5-demo-ui`
 - Original review branch remains: `feature/phase4-core-backend`
 - Day 1 is stored in local commit `ab09e45`.
 - Day 2 is stored in local commit `2aa45b5`.
 - Day 3 is stored in the current branch's dedicated local commit.
 - Day 4 is stored in the current branch's dedicated local commit.
+- Day 5 is stored in the current branch's dedicated local commit.
 - Vertical slice 1 is stored in local commit `9acf307`.
 - Authorized RAG core is stored in local commit `8b6d8fc`.
 - Chat/Agent/Tool integration is stored in local commit `9e1a513`.
@@ -272,8 +287,8 @@ Milestone 6 / Day 4: structured Citation, metadata Filtering, and small retrieva
 
 ## Next Step
 
-Day 4 已安全保存。Day 5 开发本地演示界面：文档上传、处理状态、聊天回答和 Citation 展示；不加入 OCR 或视觉理解。
+Day 5 已安全保存。Day 6 进行 Docker、本地交付验证、README/架构图/面试资料一致性审计，并准备 PR；不自动 push 或 merge。
 
 ## Handoff Summary
 
-三条业务主链、Document Ingestion 和本地 Chroma 已保存于本地提交。复杂文档 Day 1～Day 4 已分别提交；Day 4 的过滤、Citation 和评测已通过 58 项全量测试。尚未执行 push 或 merge，原复习目录和其中的学习文件未被本轮开发覆盖。
+三条业务主链、Document Ingestion 和本地 Chroma 已保存于本地提交。复杂文档 Day 1～Day 5 已分别提交；Day 5 的本地 UI、上传、状态和 Citation 展示已通过 65 项全量测试。尚未执行 push 或 merge，原复习目录和其中的学习文件未被本轮开发覆盖。

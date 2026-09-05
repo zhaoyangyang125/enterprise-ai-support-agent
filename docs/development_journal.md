@@ -442,3 +442,62 @@ Citation 继续保留结构字段，并增加适合界面显示的 `location` �
 - 权限条件和用户筛选条件必须使用 AND，不能让筛选参数改变授权结果。
 - Citation 的定位和分数属于程序数据，不是模型生成文本。
 - 指标必须先定义再计算；小型回归测试不能冒充线上准确率。
+
+## 2026-09-05 — Milestone 6 / Day 5: 本地演示工作界面
+
+### 本次目标
+
+把已经完成的后端能力变成面试和本地验收时可以直接操作的工作界面：上传虚构文档、查看状态、提出问题并检查 Citation。
+
+### 技术选择
+
+项目本身已经是 FastAPI 应用，因此使用原生 HTML/CSS/JavaScript，并由 FastAPI 提供静态文件。这样不需要为一个本地演示页增加 Node、React、打包工具和第二套部署流程。
+
+### 上传链路
+
+```text
+Browser FormData
+-> ADMIN + file boundary validation
+-> temporary transport file
+-> DocumentService
+-> Business DB processing state
+-> Document Storage
+-> PDF/Excel Parser
+-> Chroma
+-> uploader read permission
+-> active response
+```
+
+上传是业务写操作，因此不能只做文件选择按钮：后端检查 ADMIN 角色、文件扩展名、空文件和 10 MB 大小限制。返回结果删除 `stored_path`，避免向客户端暴露服务器目录。
+
+### 真实 E2E 发现的问题
+
+第一次真实上传和查询成功，但 Citation 显示 `tmpbiz__6yx.pdf / Page 2`。Fake Service 测试只确认 API 参数和返回结构，没有发现 `DocumentService` 使用了临时路径的随机文件名。
+
+修正方法是把两个概念分开：
+
+- `source_path`：服务器读取上传内容的临时路径。
+- `source_name`：用户上传的原始文件名，经 `Path(...).name` 清理后用于 Storage 和 Citation。
+
+修正后重新清理本轮生成的错误演示数据，再次上传同一虚构 PDF。系统生成 12 个 Chunk，Chat 返回 Page 2 的正确内容，Citation 变为 `fictional_hmi_policy.pdf / Page 2`。
+
+### 界面设计
+
+- 第一屏直接展示身份、聊天、筛选、上传和状态，不放营销 Hero。
+- 所有服务端回答和 Citation 使用 DOM `textContent` 写入，避免把返回文本当成 HTML 执行。
+- 显示 loading、empty、success 和 error 状态。
+- 支持键盘焦点、小屏布局和减少动画设置。
+
+### 验证
+
+- 文档 API 与 DocumentService 定向测试：9 passed。
+- 全量自动化测试：65 passed。
+- Python 与 JavaScript 语法检查通过。
+- 本地根路径和静态资源返回 HTTP 200。
+- 真实上传 → Parser → Chroma → 权限 → Chat → Citation 链通过。
+
+### 面试要点
+
+- UI 不是核心业务逻辑，仍然只调用既有 API/Service。
+- 上传文件名和服务器临时路径是不同数据，Citation 必须保留原始来源名。
+- Fake 测试速度快，但真实 E2E 能发现对象组装和跨层传递问题。

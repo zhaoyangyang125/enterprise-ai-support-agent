@@ -5,7 +5,11 @@ from app.document_processing.parsers import DocumentParserRegistry
 from app.document_processing.storage import LocalDocumentStorage
 from app.repositories.document_repository import SqlAlchemyDocumentRepository
 from app.repositories.vector_repository import VectorIndex
-from app.schemas.document import DocumentIngestionResult, ParsedBlock
+from app.schemas.document import (
+    DocumentIngestionResult,
+    DocumentVersionStatus,
+    ParsedBlock,
+)
 from app.schemas.rag import IndexedChunk
 
 
@@ -33,6 +37,8 @@ class DocumentService:
         title: str,
         document_version_id: str,
         version_label: str,
+        source_name: str | None = None,
+        grant_read_to_user_id: str | None = None,
     ) -> DocumentIngestionResult:
         """将本地 PDF/Excel 原文件转换并索引为可授权检索的 Chunk。 / Converts and indexes a local PDF/Excel original into authorization-ready chunks."""
 
@@ -43,10 +49,12 @@ class DocumentService:
             version_label,
         )
         try:
+            original_name = Path(source_name or source_path.name).name
             stored_path = self._storage.store(
                 source_path,
                 document_id,
                 document_version_id,
+                file_name=original_name,
             )
             parser = self._parser_registry.get(stored_path)
             blocks = parser.parse(stored_path)
@@ -55,13 +63,18 @@ class DocumentService:
             chunks = [
                 self._to_chunk(
                     block,
-                    source_path.name,
+                    original_name,
                     document_id,
                     document_version_id,
                 )
                 for block in blocks
             ]
             self._vector_index.upsert_chunks(chunks)
+            if grant_read_to_user_id is not None:
+                self._repository.grant_user_read(
+                    document_id,
+                    grant_read_to_user_id,
+                )
             self._repository.mark_status(document_version_id, "active")
         except Exception:
             self._repository.mark_status(document_version_id, "failed")
@@ -73,6 +86,20 @@ class DocumentService:
             chunk_count=len(chunks),
             stored_path=stored_path,
         )
+
+    def list_versions(self, limit: int = 50) -> list[DocumentVersionStatus]:
+        """取得文档管理界面需要的版本状态。 / Retrieves document-version states required by the management UI."""
+
+        return [
+            DocumentVersionStatus(
+                document_id=version.document_id,
+                document_version_id=version.document_version_id,
+                title=title,
+                version_label=version.version_label,
+                status=version.status,
+            )
+            for version, title in self._repository.list_versions(limit)
+        ]
 
     @staticmethod
     def _to_chunk(

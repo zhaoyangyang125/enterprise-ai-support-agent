@@ -2,6 +2,8 @@
 
 Enterprise AI Support Agent is a Python/FastAPI project that demonstrates secure business-data access, authorized RAG, Agent Tool Calling, and safe business workflows.
 
+这是一个使用 Python/FastAPI 开发的企业 AI 支持系统练习项目，包含受控业务数据访问、权限过滤 RAG、Agent Tool Calling、安全写入流程和复杂文档解析。
+
 The project currently contains an authenticated leave-balance slice, Authorized RAG, and a local Chat/Agent/Tool path.
 
 ## Current Feature
@@ -65,6 +67,18 @@ python -m uvicorn app.main:app --reload
 ```
 
 Open Swagger UI at `http://127.0.0.1:8000/docs`, call `GET /api/me/leave-balance`, and provide `X-User-Id: U001`.
+
+## 本地演示界面 / Local Demo UI
+
+启动应用后打开 `http://127.0.0.1:8000/`。页面可以：
+
+- 设置开发阶段的 User ID、Department 和 Roles。
+- 查询年假余额或公司文档。
+- 按内容类型或 Excel Sheet 缩小检索范围。
+- 以 ADMIN 身份上传不超过 10 MB 的 PDF/XLSX。
+- 查看文档版本状态和结构化 Citation。
+
+上传测试时可使用 `X-Role-Ids: EMPLOYEE,ADMIN`。当前认证仍是本地 Mock，不能作为生产登录方案。
 
 You can also call `POST /api/chat` with `X-User-Id: U001`:
 

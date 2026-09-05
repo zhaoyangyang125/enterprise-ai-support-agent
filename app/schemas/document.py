@@ -29,3 +29,23 @@ class DocumentIngestionResult(BaseModel):
     status: str
     chunk_count: int
     stored_path: Path
+
+
+class DocumentUploadResponse(BaseModel):
+    """定义上传接口可安全返回给界面的处理结果。 / Defines the safe processing result returned by the upload API."""
+
+    document_id: str
+    document_version_id: str
+    title: str
+    status: Literal["active"]
+    chunk_count: int
+
+
+class DocumentVersionStatus(BaseModel):
+    """定义文档管理界面显示的版本处理状态。 / Defines the document-version processing state shown in the management UI."""
+
+    document_id: str
+    document_version_id: str
+    title: str
+    version_label: str
+    status: Literal["processing", "active", "failed", "inactive"]

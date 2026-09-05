@@ -11,7 +11,7 @@
 | 项目 | 内容 |
 |---|---|
 | 文档名称 | Project 3 详细设计书 |
-| Document Version | v0.13-draft |
+| Document Version | v0.14-draft |
 | Status | Draft（草稿，尚未正式 Review） |
 | Created Date | 2026-08-24 |
 | Last Updated | 2026-09-05 |
@@ -61,6 +61,7 @@
 | v0.11 | 2026-09-04 | 实现 Excel Region Detection、多行表头路径、非破坏式合并单元格视图和 ParsedBlock 新 metadata | Phase 4 Implementation + Verification | Draft |
 | v0.12 | 2026-09-05 | 增强文字型 PDF 的重复页眉页脚清理、标题/段落识别与页内 Chunk，并将结构 metadata 贯通到 Chroma 和 Citation | Phase 4 Implementation + Verification | Draft |
 | v0.13 | 2026-09-05 | 增加不会扩大权限的 metadata Filtering、可显示 Citation 定位与分数，以及六题小型检索回归评测 | Phase 4 Implementation + Verification | Draft |
+| v0.14 | 2026-09-05 | 增加本地工作界面、ADMIN 文档上传/状态 API、上传者读取权限和原始文件名保护 | Phase 4 Implementation + E2E Verification | Draft |
 
 变更历史只记录影响接口、数据模型、权限、异常处理或测试预期的重要变化；排版和错别字修正不单独增加版本。
 
@@ -635,6 +636,12 @@ Local PDF / Excel
 | `TC-VECTOR-003` | Chroma Integration | 结构化 Excel metadata | `content_type`、Sheet、Cell Range 和 rows 可完整写入并恢复 |
 | `TC-DOC-001` | Service Integration | Excel Ingestion 成功 | 原本存在、metadata 完整、版本 active |
 | `TC-DOC-002` | Service Integration | Vector Index 故障 | 版本 failed，不标记 active |
+| `TC-DOC-003` | Service Integration | API 临时文件 + 原始文件名 | Storage 和 Citation 使用原始文件名，不使用随机临时名 |
+| `TC-API-DOC-101` | API | ADMIN 上传 PDF/XLSX | HTTP 201，返回 active 与 Chunk 数，不暴露服务器路径 |
+| `TC-API-DOC-102` | API | 非 ADMIN 上传 | HTTP 403，DocumentService 不执行 |
+| `TC-API-DOC-103` | API | 不支持类型或空文件 | HTTP 415/422，不进入解析流程 |
+| `TC-API-DOC-104` | API | ADMIN 查询版本状态 | 返回 processing/active/failed/inactive 状态结构 |
+| `TC-UI-101` | API/UI | GET `/` | 返回本地工作界面与静态资源 |
 
 ### 6.6 Level 2 复杂文档增强范围
 
@@ -737,6 +744,41 @@ ParsedBlock
 
 Day 3 使用完全虚构的三页日语 HMI 方针 PDF 做真实文件测试，并对全部页面进行了渲染检查。验证结果：Day 3 相关测试 16 项通过；全项目 50 项测试通过，保留 1 条第三方 Starlette 弃用警告。
 
+### 6.12 Day 5 本地演示界面与上传 API
+
+界面由现有 FastAPI 直接提供原生 HTML/CSS/JavaScript，不新增 Node、React 或前端构建链。根路径 `/` 返回工作界面，`/static` 提供样式和脚本。
+
+首屏包含：
+
+- 开发阶段的 User/Department/Role 身份输入。
+- 聊天、示例问题、`content_type` 和 Sheet 筛选。
+- PDF/Excel 上传表单。
+- 文档版本处理状态。
+- `evidence_found`、Citation location 和 score 展示。
+
+上传调用链：
+
+```text
+POST /api/admin/documents
+-> Mock CurrentUser + ADMIN 检查
+-> 扩展名/空文件/10 MB 大小检查
+-> 临时传输文件
+-> DocumentService
+-> DocumentVersion = processing
+-> 原本存储 + Parser + Chroma
+-> 给上传用户授予 read permission
+-> DocumentVersion = active
+-> 安全的 DocumentUploadResponse
+```
+
+支持 `.pdf` 和 `.xlsx`，最大 10 MB。本轮同步处理，因此上传响应在解析与索引完成后返回；状态 API 仍统一展示 `processing/active/failed/inactive`。生产级后台 Job Queue 不属于 Day 5。
+
+上传接口不返回 `stored_path`。原始浏览器文件名与服务器临时路径分离，Storage 和 Citation 只使用 `Path(original_name).name` 清理后的原始文件名，防止随机临时名或客户端路径进入 metadata。
+
+真实端到端验证使用虚构 `fictional_hmi_policy.pdf`：上传成功并生成 12 个 Chunk；同一用户查询走行中视频规则后，返回 Page 2 的证据与 `fictional_hmi_policy.pdf / Page 2` Citation。修复前曾显示临时文件名，该问题已加入 `TC-DOC-003` 回归测试。
+
+Day 5 自动化验证结果：全项目 65 项测试通过，保留 1 条第三方 Starlette 弃用警告；Python 和 JavaScript 语法检查通过。
+
 ---
 
 ## 7. 设计决定记录 / Decision Log
@@ -782,6 +824,11 @@ Day 3 使用完全虚构的三页日语 HMI 方针 PDF 做真实文件测试，�
 | DD-037 | RetrievalFilter 只能按白名单 metadata 缩小候选范围；权限版本集合仍由 AuthorizationService 决定，并在 Chroma 中使用 AND 合并 | Phase 4 Implementation + Security Verification | Confirmed |
 | DD-038 | Citation 的 `location` 与 `score` 由检索 metadata 和结果分数确定性生成；相同原文定位去重并保留最高分结果 | Phase 4 Implementation | Confirmed |
 | DD-039 | Day 4 使用 6 题虚构数据建立回归评测，分别报告检索、来源和无答案指标，不把小样本 100% 描述为生产准确率 | Phase 4 Evaluation Decision | Confirmed |
+| DD-040 | Day 5 界面由 FastAPI 直接提供原生 HTML/CSS/JavaScript，不增加独立前端构建工具 | Phase 4 Implementation | Confirmed |
+| DD-041 | 文档管理 API 要求开发阶段 ADMIN 角色；上传成功时自动给上传用户增加 read permission | Phase 4 Security Decision | Confirmed |
+| DD-042 | 上传只允许 PDF/XLSX、非空且不超过 10 MB；响应不暴露服务器 stored_path | Phase 4 Security Decision | Confirmed |
+| DD-043 | 原始文件名与临时传输路径分离；Storage 和 Citation 使用清理后的原始文件名 | Phase 4 E2E Failure Analysis | Confirmed |
+| DD-044 | Day 5 使用同步 Ingestion；生产级后台任务队列和实时进度留到后续版本 | Phase 4 Scope Decision | Confirmed |
 
 ---
 
@@ -849,6 +896,14 @@ REQ-F-001..004 / NFR-SEC-001 + Phase 4 DD-037..039
 -> app/evaluation/sample_suite.py
 -> docs/evaluation/day4_retrieval_report.md
 -> TC-RAG-FILTER-101 / TC-RAG-CITE-101 / TC-VECTOR-FILTER-101 / TC-EVAL-101
+```
+
+```text
+REQ-F-019..021 / FN-DOC-001 + Phase 4 DD-040..044
+-> GET / + POST/GET /api/admin/documents
+-> DocumentService / Storage / Parser / Chroma / Permission
+-> app/static/index.html
+-> TC-DOC-003 / TC-API-DOC-101..104 / TC-UI-101
 ```
 
 ```text

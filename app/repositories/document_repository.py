@@ -1,6 +1,7 @@
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.db.models import Document, DocumentVersion
+from app.db.models import Document, DocumentPermission, DocumentVersion
 
 
 class SqlAlchemyDocumentRepository:
@@ -49,3 +50,39 @@ class SqlAlchemyDocumentRepository:
             raise ValueError("Document version was not initialized")
         version.status = status
         self._session.commit()
+
+    def grant_user_read(self, document_id: str, user_id: str) -> None:
+        """幂等地授予指定用户对文档的读取权限。 / Idempotently grants a user read access to a document."""
+
+        existing = self._session.scalar(
+            select(DocumentPermission).where(
+                DocumentPermission.document_id == document_id,
+                DocumentPermission.subject_type == "user",
+                DocumentPermission.subject_id == user_id,
+                DocumentPermission.action == "read",
+            )
+        )
+        if existing is None:
+            self._session.add(
+                DocumentPermission(
+                    document_id=document_id,
+                    subject_type="user",
+                    subject_id=user_id,
+                    action="read",
+                )
+            )
+            self._session.commit()
+
+    def list_versions(
+        self,
+        limit: int = 50,
+    ) -> list[tuple[DocumentVersion, str]]:
+        """按编号倒序返回文档版本和对应标题。 / Returns document versions and titles in descending identifier order."""
+
+        rows = self._session.execute(
+            select(DocumentVersion, Document.title)
+            .join(Document, Document.document_id == DocumentVersion.document_id)
+            .order_by(DocumentVersion.document_version_id.desc())
+            .limit(limit)
+        ).all()
+        return [(version, title) for version, title in rows]

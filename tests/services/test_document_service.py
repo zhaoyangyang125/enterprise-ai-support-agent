@@ -2,10 +2,10 @@ from pathlib import Path
 
 from openpyxl import Workbook
 import pytest
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
-from app.db.models import Base, DocumentVersion
+from app.db.models import Base, DocumentPermission, DocumentVersion
 from app.document_processing.parsers import DocumentParserRegistry
 from app.document_processing.storage import LocalDocumentStorage
 from app.repositories.document_repository import SqlAlchemyDocumentRepository
@@ -75,8 +75,10 @@ def test_ingestion_stores_original_indexes_metadata_and_activates_version(
             title="Travel Policy",
             document_version_id="TRAVEL_POLICY-V1",
             version_label="v1",
+            grant_read_to_user_id="U001",
         )
         version = session.get(DocumentVersion, "TRAVEL_POLICY-V1")
+        permissions = session.scalars(select(DocumentPermission)).all()
 
     assert result.status == "active"
     assert result.chunk_count == 1
@@ -87,6 +89,71 @@ def test_ingestion_stores_original_indexes_metadata_and_activates_version(
     assert vector_index.chunks[0].cell_range == "A1:B2"
     assert vector_index.chunks[0].rows == "2"
     assert vector_index.chunks[0].source_name == "travel.xlsx"
+    assert len(permissions) == 1
+    assert permissions[0].subject_type == "user"
+    assert permissions[0].subject_id == "U001"
+
+
+def test_list_versions_returns_ui_status_schema(tmp_path) -> None:
+    """验证 Service 将数据库版本转换为界面状态结构。 / Verifies the service converts database versions into UI status schemas."""
+
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    source = tmp_path / "travel.xlsx"
+    create_excel(source)
+
+    with Session(engine) as session:
+        service = make_service(
+            session,
+            tmp_path / "storage",
+            RecordingVectorIndex(),
+        )
+        service.ingest(
+            source,
+            "TRAVEL_POLICY",
+            "Travel Policy",
+            "TRAVEL_POLICY-V1",
+            "v1",
+        )
+
+        statuses = service.list_versions()
+
+    assert [status.model_dump() for status in statuses] == [
+        {
+            "document_id": "TRAVEL_POLICY",
+            "document_version_id": "TRAVEL_POLICY-V1",
+            "title": "Travel Policy",
+            "version_label": "v1",
+            "status": "active",
+        }
+    ]
+
+
+def test_ingestion_preserves_original_name_when_source_is_temporary(tmp_path) -> None:
+    """验证临时上传路径不会污染原本文件名和 Citation metadata。 / Verifies a temporary upload path does not replace the original filename in storage or citation metadata."""
+
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    temporary_source = tmp_path / "tmp-random-name.xlsx"
+    create_excel(temporary_source)
+    vector_index = RecordingVectorIndex()
+
+    with Session(engine) as session:
+        result = make_service(
+            session,
+            tmp_path / "storage",
+            vector_index,
+        ).ingest(
+            source_path=temporary_source,
+            document_id="HMI-SPEC",
+            title="HMI Spec",
+            document_version_id="HMI-SPEC-V1",
+            version_label="v1",
+            source_name="fictional_hmi_test_spec.xlsx",
+        )
+
+    assert result.stored_path.name == "fictional_hmi_test_spec.xlsx"
+    assert vector_index.chunks[0].source_name == "fictional_hmi_test_spec.xlsx"
 
 
 def test_ingestion_marks_version_failed_when_vector_index_fails(tmp_path) -> None:
