@@ -154,3 +154,49 @@ def test_chroma_combines_authorization_with_metadata_filters(tmp_path) -> None:
     )
 
     assert [chunk.chunk_id for chunk in result] == ["ALLOWED-XLSX"]
+
+
+def test_chroma_round_trips_image_evidence_metadata(tmp_path) -> None:
+    """验证 Chroma 只保存可检索的图片 metadata，并能完整恢复。 / Verifies Chroma stores and restores only searchable image metadata."""
+
+    repository = ChromaVectorRepository.persistent(
+        path=tmp_path / "chroma",
+        collection_name="image_evidence",
+        embedding_provider=HashEmbeddingProvider(dimensions=64),
+    )
+    repository.upsert_chunks(
+        [
+            IndexedChunk(
+                chunk_id="IMAGE-001",
+                document_id="HMI-MANUAL",
+                document_version_id="HMI-MANUAL-V1",
+                content="仪表盘显示红色制动警告灯",
+                source_name="hmi_manual.pdf",
+                content_type="note",
+                modality="image",
+                extraction_method="vision",
+                image_id="IMG-HMI-001",
+                image_index=2,
+                mime_type="image/png",
+                confidence=0.91,
+                page=7,
+            )
+        ]
+    )
+
+    result = repository.search(
+        "红色制动警告灯",
+        frozenset({"HMI-MANUAL-V1"}),
+        1,
+    )
+
+    assert len(result) == 1
+    assert result[0].modality == "image"
+    assert result[0].extraction_method == "vision"
+    assert result[0].image_id == "IMG-HMI-001"
+    assert result[0].image_index == 2
+    assert result[0].mime_type == "image/png"
+    assert result[0].confidence == 0.91
+    stored_metadata = repository._collection.get(ids=["IMAGE-001"])["metadatas"][0]
+    assert "image_path" not in stored_metadata
+    assert "image_url" not in stored_metadata

@@ -110,19 +110,21 @@ class DocumentService:
     ) -> IndexedChunk:
         """使用内容和定位生成稳定 ID，并保留 citation metadata。 / Creates a stable ID from content and location while preserving citation metadata."""
 
-        identity = "|".join(
-            str(value)
-            for value in (
-                document_version_id,
-                block.content_type,
-                block.page,
-                block.sheet,
-                block.cell_range,
-                block.rows,
-                block.section,
-                block.content,
-            )
-        )
+        # 旧文本 Chunk 继续使用原来的组成和顺序，避免升级后 ID 全部变化。
+        identity_parts: list[object] = [
+            document_version_id,
+            block.content_type,
+            block.page,
+            block.sheet,
+            block.cell_range,
+            block.rows,
+            block.section,
+            block.content,
+        ]
+        # 图片证据才追加图片身份。同一页多张图片因此不会得到相同 ID。
+        if block.image_id is not None:
+            identity_parts.extend([block.image_id, block.image_index])
+        identity = "|".join(str(value) for value in identity_parts)
         chunk_id = hashlib.sha256(identity.encode("utf-8")).hexdigest()
         return IndexedChunk(
             chunk_id=chunk_id,
@@ -131,6 +133,12 @@ class DocumentService:
             content=block.content,
             source_name=source_name,
             content_type=block.content_type,
+            modality=block.modality,
+            extraction_method=block.extraction_method,
+            image_id=block.image_id,
+            image_index=block.image_index,
+            mime_type=block.mime_type,
+            confidence=block.confidence,
             page=block.page,
             section=block.section,
             sheet=block.sheet,

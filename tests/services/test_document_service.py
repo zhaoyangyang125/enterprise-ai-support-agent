@@ -1,3 +1,4 @@
+import hashlib
 from pathlib import Path
 
 from openpyxl import Workbook
@@ -9,6 +10,7 @@ from app.db.models import Base, DocumentPermission, DocumentVersion
 from app.document_processing.parsers import DocumentParserRegistry
 from app.document_processing.storage import LocalDocumentStorage
 from app.repositories.document_repository import SqlAlchemyDocumentRepository
+from app.schemas.document import ParsedBlock
 from app.schemas.rag import IndexedChunk
 from app.services.document_service import DocumentService
 
@@ -181,3 +183,69 @@ def test_ingestion_marks_version_failed_when_vector_index_fails(tmp_path) -> Non
         version = session.get(DocumentVersion, "TRAVEL_POLICY-V1")
 
     assert version is not None and version.status == "failed"
+
+
+def test_to_chunk_preserves_existing_text_chunk_id_rule() -> None:
+    """验证新增图片 metadata 后，旧文本 Chunk ID 的计算结果保持不变。 / Verifies image metadata does not change the existing text chunk-ID rule."""
+
+    block = ParsedBlock(
+        content="国内出張の宿泊費上限",
+        content_type="paragraph",
+        page=3,
+        section="2.1 国内出張",
+    )
+    old_identity = "|".join(
+        str(value)
+        for value in (
+            "TRAVEL-V1",
+            block.content_type,
+            block.page,
+            block.sheet,
+            block.cell_range,
+            block.rows,
+            block.section,
+            block.content,
+        )
+    )
+    expected_id = hashlib.sha256(old_identity.encode("utf-8")).hexdigest()
+
+    chunk = DocumentService._to_chunk(
+        block,
+        "travel.pdf",
+        "TRAVEL",
+        "TRAVEL-V1",
+    )
+
+    assert chunk.chunk_id == expected_id
+
+
+def test_to_chunk_passes_image_metadata_without_internal_path() -> None:
+    """验证图片 metadata 进入索引模型，但服务器内部路径不会进入索引。 / Verifies image metadata reaches indexing without the server-internal path."""
+
+    block = ParsedBlock(
+        content="仪表盘警告灯",
+        content_type="note",
+        modality="image",
+        extraction_method="ocr",
+        image_id="IMG-001",
+        image_path=Path("private/manual/IMG-001.png"),
+        image_index=1,
+        mime_type="image/png",
+        confidence=0.88,
+        page=5,
+    )
+
+    chunk = DocumentService._to_chunk(
+        block,
+        "manual.pdf",
+        "MANUAL",
+        "MANUAL-V1",
+    )
+
+    assert chunk.modality == "image"
+    assert chunk.extraction_method == "ocr"
+    assert chunk.image_id == "IMG-001"
+    assert chunk.image_index == 1
+    assert chunk.mime_type == "image/png"
+    assert chunk.confidence == 0.88
+    assert "image_path" not in chunk.model_dump()

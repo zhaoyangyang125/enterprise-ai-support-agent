@@ -103,6 +103,13 @@ def test_answer_uses_authorized_versions_and_metadata_citation() -> None:
         "location": "TravelPolicy_v2.pdf / Page 3",
         "score": 0.9,
         "content_type": "paragraph",
+        "modality": "text",
+        "extraction_method": None,
+        "image_id": None,
+        "image_url": None,
+        "image_index": None,
+        "mime_type": None,
+        "confidence": None,
         "page": 3,
         "section": "2.1 国内出張",
         "sheet": None,
@@ -245,3 +252,41 @@ def test_citation_formats_excel_location_and_deduplicates_same_source() -> None:
         "fictional_hmi_test_spec.xlsx / Sheet 機能仕様 / A8:H12"
     )
     assert result.sources[0].score == 0.92
+
+
+def test_image_evidence_citation_exposes_safe_metadata_without_url_yet() -> None:
+    """验证 Phase 1 的图片 Citation 返回安全 metadata，但暂不生成访问 URL。 / Verifies Phase 1 image citations expose safe metadata without generating a URL yet."""
+
+    image_chunk = RetrievedChunk(
+        chunk_id="IMAGE-001",
+        document_id="HMI-MANUAL",
+        document_version_id="HMI-MANUAL-V1",
+        content="仪表盘显示红色制动警告灯",
+        score=0.94,
+        source_name="hmi_manual.pdf",
+        content_type="note",
+        modality="image",
+        extraction_method="vision",
+        image_id="IMG-HMI-001",
+        image_index=2,
+        mime_type="image/png",
+        confidence=0.91,
+        page=7,
+    )
+    service = RagService(
+        authorization_service=FakeAuthorizationService(
+            frozenset({"HMI-MANUAL-V1"})
+        ),
+        vector_repository=FakeVectorRepository([image_chunk]),
+        answer_generator=FakeAnswerGenerator(),
+        minimum_score=0.5,
+    )
+
+    result = service.answer("制动警告灯", CurrentUser(user_id="U001"))
+
+    citation = result.sources[0]
+    assert citation.modality == "image"
+    assert citation.extraction_method == "vision"
+    assert citation.image_id == "IMG-HMI-001"
+    assert citation.image_url is None
+    assert citation.confidence == 0.91

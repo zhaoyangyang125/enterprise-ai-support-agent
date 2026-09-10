@@ -1,10 +1,12 @@
 from pathlib import Path
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 DocumentContentType = Literal["title", "key_value", "table", "note", "paragraph"]
+DocumentModality = Literal["text", "image"]
+DocumentExtractionMethod = Literal["text_layer", "native_excel", "ocr", "vision"]
 
 
 class ParsedBlock(BaseModel):
@@ -14,6 +16,13 @@ class ParsedBlock(BaseModel):
 
     content: str
     content_type: DocumentContentType = "paragraph"
+    modality: DocumentModality = "text"
+    extraction_method: DocumentExtractionMethod | None = None
+    image_id: str | None = None
+    image_path: Path | None = None
+    image_index: int | None = Field(default=None, ge=1)
+    mime_type: str | None = None
+    confidence: float | None = Field(default=None, ge=0.0, le=1.0)
     page: int | None = None
     section: str | None = None
     sheet: str | None = None

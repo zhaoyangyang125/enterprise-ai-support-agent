@@ -1,10 +1,25 @@
 # Phase 4 Progress
 
-Last updated: 2026-09-05
+Last updated: 2026-09-10
 
 ## Current Scope
 
-Milestone 6 / Day 5: local demonstration UI, document upload, processing status, chat, and Citation display.
+OCR / Vision / Image Evidence Phase 1：Schema 与 metadata 扩展已完成；等待用户指令后才进入 Phase 2。
+
+## 2026-09-10 OCR / Vision Phase 1 已完成
+
+- 当前分支：`feature/ocr-vision-phase1-metadata`，从提交 `e591e20` 创建。
+- 复用现有 `ParsedBlock -> IndexedChunk -> Chroma -> RetrievedChunk -> SourceCitation`，没有建立平行模型。
+- `ParsedBlock` 新增 `modality`、`extraction_method`、`image_id`、`image_path`、`image_index`、`mime_type`、`confidence`。
+- `IndexedChunk`、`RetrievedChunk` 和 `SourceCitation` 传递安全的图片证据 metadata。
+- `image_path` 只保留在解析层内部，不进入 Chunk、Chroma 或 API。
+- Chroma metadata 白名单已增加图片证据字段，不保存二进制、Base64、路径或 URL。
+- Phase 1 的 `SourceCitation.image_url` 保持 `None`，等待后续安全图片访问接口。
+- 旧文本 Chunk ID 仍按原字段与原顺序计算，避免已有索引 ID 无故变化。
+- 定向测试：`20 passed`。
+- 全量测试：`71 passed`，保留 1 条第三方 Starlette 弃用警告。
+- 尚未实现图片存储、图片提取、OCR、Vision、图片访问 API 或前端图片展示。
+- 安全停止点：Phase 1 完成后停止，下一步须等待项目所有者指令。
 
 ## 2026-09-04 隔离开发说明
 

@@ -1,6 +1,10 @@
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.schemas.document import DocumentContentType
+from app.schemas.document import (
+    DocumentContentType,
+    DocumentExtractionMethod,
+    DocumentModality,
+)
 
 
 class RetrievalFilter(BaseModel):
@@ -25,6 +29,12 @@ class IndexedChunk(BaseModel):
     content: str
     source_name: str
     content_type: DocumentContentType = "paragraph"
+    modality: DocumentModality = "text"
+    extraction_method: DocumentExtractionMethod | None = None
+    image_id: str | None = None
+    image_index: int | None = Field(default=None, ge=1)
+    mime_type: str | None = None
+    confidence: float | None = Field(default=None, ge=0.0, le=1.0)
     page: int | None = None
     section: str | None = None
     sheet: str | None = None
@@ -49,6 +59,13 @@ class SourceCitation(BaseModel):
     location: str
     score: float = Field(ge=0.0, le=1.0)
     content_type: DocumentContentType = "paragraph"
+    modality: DocumentModality = "text"
+    extraction_method: DocumentExtractionMethod | None = None
+    image_id: str | None = None
+    image_url: str | None = None
+    image_index: int | None = Field(default=None, ge=1)
+    mime_type: str | None = None
+    confidence: float | None = Field(default=None, ge=0.0, le=1.0)
     page: int | None = None
     section: str | None = None
     sheet: str | None = None

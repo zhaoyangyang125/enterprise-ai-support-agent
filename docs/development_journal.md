@@ -501,3 +501,35 @@ Browser FormData
 - UI 不是核心业务逻辑，仍然只调用既有 API/Service。
 - 上传文件名和服务器临时路径是不同数据，Citation 必须保留原始来源名。
 - Fake 测试速度快，但真实 E2E 能发现对象组装和跨层传递问题。
+
+## 2026-09-10 — OCR / Vision / Image Evidence Phase 1
+
+### 本次目标
+
+先让现有 RAG 数据链“认识”图片证据需要的 metadata。这个阶段不读取图片，也不调用 OCR 或 Vision。
+
+### 为什么不另建一套图片模型
+
+文字证据和图片证据最终都要经过索引、权限过滤、检索和 Citation。如果另建平行流程，会重复实现权限和检索逻辑，也更容易出现一条链漏掉安全检查。因此复用：
+
+```text
+ParsedBlock -> IndexedChunk -> Chroma -> RetrievedChunk -> SourceCitation
+```
+
+### 关键边界
+
+- `content_type` 回答“它在文档中是什么结构”，例如表格或备注。
+- `modality` 回答“证据来自文字还是图片”。
+- `image_path` 是服务器内部位置，不能进入浏览器响应或向量数据库。
+- `image_id` 是可以安全传递的逻辑标识，后续访问图片时再通过权限检查换成 URL。
+- 旧文本 Chunk ID 不改变，避免升级 metadata 后把全部旧索引当成新数据。
+
+### 验证
+
+- Schema、DocumentService、Chroma、RagService 定向测试：20 passed。
+- 全项目回归测试：71 passed。
+- 保留 1 条第三方 Starlette 弃用警告，与本次功能无关。
+
+### 当前停止点
+
+Phase 1 已完成。图片存储、提取、OCR、Vision、图片访问 API 和前端展示均未开始，等待项目所有者发出下一步指令。

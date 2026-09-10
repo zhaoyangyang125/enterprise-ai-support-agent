@@ -197,6 +197,14 @@ class ChromaVectorRepository:
                         metadata.get("content_type")
                     )
                     or "paragraph",
+                    modality=self._optional_str(metadata.get("modality")) or "text",
+                    extraction_method=self._optional_str(
+                        metadata.get("extraction_method")
+                    ),
+                    image_id=self._optional_str(metadata.get("image_id")),
+                    image_index=self._optional_int(metadata.get("image_index")),
+                    mime_type=self._optional_str(metadata.get("mime_type")),
+                    confidence=self._optional_float(metadata.get("confidence")),
                     page=self._optional_int(metadata.get("page")),
                     section=self._optional_str(metadata.get("section")),
                     sheet=self._optional_str(metadata.get("sheet")),
@@ -242,8 +250,21 @@ class ChromaVectorRepository:
             "document_version_id": chunk.document_version_id,
             "source_name": chunk.source_name,
             "content_type": chunk.content_type,
+            "modality": chunk.modality,
         }
-        for key in ("page", "section", "sheet", "cell_range", "rows"):
+        # 这里只允许写入可检索的轻量 metadata，不保存图片二进制、绝对路径或 URL。
+        for key in (
+            "extraction_method",
+            "image_id",
+            "image_index",
+            "mime_type",
+            "confidence",
+            "page",
+            "section",
+            "sheet",
+            "cell_range",
+            "rows",
+        ):
             value = getattr(chunk, key)
             if value is not None:
                 metadata[key] = value
@@ -260,3 +281,9 @@ class ChromaVectorRepository:
         """把可选 page metadata 安全转换为整数。 / Safely converts optional page metadata to an integer."""
 
         return None if value is None else int(value)
+
+    @staticmethod
+    def _optional_float(value: object) -> float | None:
+        """把可选 confidence metadata 安全转换为小数。 / Safely converts optional confidence metadata to a float."""
+
+        return None if value is None else float(value)

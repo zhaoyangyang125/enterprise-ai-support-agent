@@ -11,15 +11,15 @@
 | 项目 | 内容 |
 |---|---|
 | 文档名称 | Project 3 详细设计书 |
-| Document Version | v0.14-draft |
+| Document Version | v0.15-draft |
 | Status | Draft（草稿，尚未正式 Review） |
 | Created Date | 2026-08-24 |
-| Last Updated | 2026-09-05 |
+| Last Updated | 2026-09-10 |
 | Prepared By | 项目负责人；Codex 辅助整理 |
 | Reviewed By | Pending（待审阅） |
 | Approved By | Pending（待批准） |
 | Related Phase | Phase 4 Coding |
-| Current Scope | 三条核心主链；Chat Agent/Tool；Document Ingestion、本地 Chroma 与 Level 2 复杂文档解析设计 |
+| Current Scope | 三条核心主链；Chat Agent/Tool；Document Ingestion、本地 Chroma、复杂文档解析与 OCR/Vision Phase 1 metadata 基础 |
 | Related Requirements | `REQ-F-001`～`REQ-F-005`、`REQ-F-007`～`REQ-F-016`、`NFR-SEC-001` |
 
 ### 0.1 状态定义
@@ -62,6 +62,7 @@
 | v0.12 | 2026-09-05 | 增强文字型 PDF 的重复页眉页脚清理、标题/段落识别与页内 Chunk，并将结构 metadata 贯通到 Chroma 和 Citation | Phase 4 Implementation + Verification | Draft |
 | v0.13 | 2026-09-05 | 增加不会扩大权限的 metadata Filtering、可显示 Citation 定位与分数，以及六题小型检索回归评测 | Phase 4 Implementation + Verification | Draft |
 | v0.14 | 2026-09-05 | 增加本地工作界面、ADMIN 文档上传/状态 API、上传者读取权限和原始文件名保护 | Phase 4 Implementation + E2E Verification | Draft |
+| v0.15 | 2026-09-10 | 在现有 RAG 单一数据链中增加 OCR/Vision/Image Evidence metadata 契约，并保持旧文本 Chunk ID 兼容 | OCR/Vision Phase 1 Decision + Verification | Draft |
 
 变更历史只记录影响接口、数据模型、权限、异常处理或测试预期的重要变化；排版和错别字修正不单独增加版本。
 
@@ -779,6 +780,45 @@ POST /api/admin/documents
 
 Day 5 自动化验证结果：全项目 65 项测试通过，保留 1 条第三方 Starlette 弃用警告；Python 和 JavaScript 语法检查通过。
 
+### 6.13 OCR / Vision Phase 1：Schema 与 metadata 基础
+
+本阶段只扩展现有数据契约，不提取图片、不调用 OCR/Vision Provider，也不提供图片访问 API。所有信息继续沿用同一条链：
+
+```text
+ParsedBlock
+-> DocumentService
+-> IndexedChunk
+-> Chroma metadata
+-> RetrievedChunk
+-> RagService
+-> SourceCitation
+```
+
+`content_type` 表示内容的结构角色（标题、表格、备注等），`modality` 表示内容来自文字还是图片，两者不能混为一个字段。新增 metadata 如下：
+
+| 模型 | 新增字段 | 边界 |
+|---|---|---|
+| `ParsedBlock` | `modality`、`extraction_method`、`image_id`、`image_path`、`image_index`、`mime_type`、`confidence` | `image_path` 只允许在服务器内部解析阶段使用 |
+| `IndexedChunk` / `RetrievedChunk` | 除 `image_path` 外的上述证据字段 | 不保存服务器路径 |
+| Chroma metadata | `modality` 及非空的提取方法、图片标识、序号、MIME、置信度 | 禁止图片二进制、Base64、绝对路径和访问 URL |
+| `SourceCitation` | 图片证据字段及 `image_url` | Phase 1 的 `image_url` 固定为空；后续由有权限检查的 API 生成 |
+
+`extraction_method` 的允许值为 `text_layer / native_excel / ocr / vision`。为了不把现有 Excel 错误标成 `text_layer`，旧 Parser 未显式设置时暂为 `None`，后续 Parser 接入时按真实提取方式赋值。
+
+稳定 ID 规则保持兼容：旧文本 Chunk 继续使用原字段和原顺序计算 SHA-256；只有存在 `image_id` 的图片证据才把 `image_id` 与 `image_index` 追加到身份材料中。
+
+Phase 1 测试：
+
+| Test Case ID | 验证内容 |
+|---|---|
+| `TC-SCHEMA-IMAGE-001` | 旧文本模型使用兼容默认值；图片模型区分内部路径与对外字段 |
+| `TC-DOC-IMAGE-001` | metadata 从 ParsedBlock 进入 IndexedChunk，且不带 `image_path` |
+| `TC-DOC-IMAGE-002` | 旧文本 Chunk ID 计算结果不变 |
+| `TC-VECTOR-IMAGE-001` | Chroma 往返恢复图片 metadata，且不保存路径或 URL |
+| `TC-RAG-IMAGE-001` | Citation 返回安全图片 metadata，Phase 1 不生成 `image_url` |
+
+定向测试 20 项通过；全项目 71 项通过，保留 1 条第三方 Starlette 弃用警告。
+
 ---
 
 ## 7. 设计决定记录 / Decision Log
@@ -829,6 +869,10 @@ Day 5 自动化验证结果：全项目 65 项测试通过，保留 1 条第三�
 | DD-042 | 上传只允许 PDF/XLSX、非空且不超过 10 MB；响应不暴露服务器 stored_path | Phase 4 Security Decision | Confirmed |
 | DD-043 | 原始文件名与临时传输路径分离；Storage 和 Citation 使用清理后的原始文件名 | Phase 4 E2E Failure Analysis | Confirmed |
 | DD-044 | Day 5 使用同步 Ingestion；生产级后台任务队列和实时进度留到后续版本 | Phase 4 Scope Decision | Confirmed |
+| DD-045 | OCR/Vision 复用现有 ParsedBlock 到 SourceCitation 的单一数据链，不建立平行图片模型或第二套索引流程 | OCR/Vision Phase 1 Decision | Confirmed |
+| DD-046 | `content_type` 表示结构角色，`modality` 独立表示 `text/image`；提取方法使用 `text_layer/native_excel/ocr/vision` | OCR/Vision Phase 1 Decision | Confirmed |
+| DD-047 | `image_path` 只用于服务器内部，不进入 IndexedChunk、Chroma 或 API；Chroma 也不保存图片二进制、Base64 或 URL | OCR/Vision Phase 1 Security Decision | Confirmed |
+| DD-048 | 旧文本 Chunk ID 算法保持不变；图片证据存在 `image_id` 时才追加图片身份信息 | OCR/Vision Phase 1 Compatibility Decision | Confirmed |
 
 ---
 
@@ -844,7 +888,7 @@ Day 5 自动化验证结果：全项目 65 项测试通过，保留 1 条第三�
 - Embedding 模型与 LLM Provider。
 - Semantic Retrieval 的生产阈值与校准数据。
 - Document 更新到 Vector Index 的同步方式（`OI-004`）。
-- OCR 范围（`OI-001`）和大规模 Excel 阈值（`OI-005`）。
+- OCR/Vision Provider、超时、重试和置信度阈值；大规模 Excel 阈值（`OI-005`）。
 - 半天申请、公司节假日表和跨年度处理。
 - 审批、拒绝、取消和余额释放流程。
 - confirmation token 的生产环境加密/签名与清理策略。
