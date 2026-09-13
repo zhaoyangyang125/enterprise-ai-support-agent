@@ -4,7 +4,21 @@ Last updated: 2026-09-13
 
 ## Current Scope
 
-OCR / Vision / Image Evidence Phase 2：本地图片资产存储已完成；等待用户指令后才进入 Phase 3。
+OCR / Vision / Image Evidence Phase 3：Excel 普通嵌入图片提取已完成；等待用户指令后才进入 Phase 4。
+
+## 2026-09-13 OCR / Vision Phase 3 已完成
+
+- 当前分支：`feature/ocr-vision-phase3-excel-images`，从 Phase 2 提交 `91c4220` 创建。
+- 新增 `ExcelImageExtractor`，遍历 Workbook/Worksheet 中 openpyxl 可读取的普通嵌入图片。
+- 新增内部结果 `ExtractedExcelImage`，保留 image_id、内部路径、全 Workbook 序号、MIME、Sheet 和可靠锚点。
+- 图片 bytes 交给 Phase 2 的 `LocalImageAssetStorage`，没有重复实现目录或 image_id 规则。
+- 图片序号跨 Sheet 连续递增；无法可靠取得锚点时允许 `None`。
+- `ExcelDocumentParser` 的现有文字解析代码没有修改。
+- `pyproject.toml` 新增 Pillow 直接依赖；当前验证版本为 `12.3.0`。
+- Phase 3 定向测试：`12 passed`。
+- 全量测试：`79 passed`，保留 1 条第三方 Starlette 弃用警告。
+- 尚未接入 OCR、Vision、DocumentService、Chroma、Citation 或前端。
+- 安全停止点：Phase 3 完成后停止，下一步须等待项目所有者指令。
 
 ## 2026-09-13 OCR / Vision Phase 2 已完成
 

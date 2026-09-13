@@ -11,7 +11,7 @@
 | 项目 | 内容 |
 |---|---|
 | 文档名称 | Project 3 详细设计书 |
-| Document Version | v0.16-draft |
+| Document Version | v0.17-draft |
 | Status | Draft（草稿，尚未正式 Review） |
 | Created Date | 2026-08-24 |
 | Last Updated | 2026-09-13 |
@@ -19,7 +19,7 @@
 | Reviewed By | Pending（待审阅） |
 | Approved By | Pending（待批准） |
 | Related Phase | Phase 4 Coding |
-| Current Scope | 三条核心主链；Chat Agent/Tool；Document Ingestion、本地 Chroma、复杂文档解析与 OCR/Vision Phase 2 本地图片资产存储 |
+| Current Scope | 三条核心主链；Chat Agent/Tool；Document Ingestion、本地 Chroma、复杂文档解析与 OCR/Vision Phase 3 Excel 图片提取 |
 | Related Requirements | `REQ-F-001`～`REQ-F-005`、`REQ-F-007`～`REQ-F-016`、`NFR-SEC-001` |
 
 ### 0.1 状态定义
@@ -64,6 +64,7 @@
 | v0.14 | 2026-09-05 | 增加本地工作界面、ADMIN 文档上传/状态 API、上传者读取权限和原始文件名保护 | Phase 4 Implementation + E2E Verification | Draft |
 | v0.15 | 2026-09-10 | 在现有 RAG 单一数据链中增加 OCR/Vision/Image Evidence metadata 契约，并保持旧文本 Chunk ID 兼容 | OCR/Vision Phase 1 Decision + Verification | Draft |
 | v0.16 | 2026-09-13 | 增加绑定 DocumentVersion 的本地图片资产存储、稳定 image_id、受控读取与路径跳转防护 | OCR/Vision Phase 2 Decision + Verification | Draft |
+| v0.17 | 2026-09-13 | 增加 Excel 普通嵌入图片提取、Sheet/锚点定位、MIME 识别及本地资产保存 | OCR/Vision Phase 3 Decision + Verification | Draft |
 
 变更历史只记录影响接口、数据模型、权限、异常处理或测试预期的重要变化；排版和错别字修正不单独增加版本。
 
@@ -866,6 +867,46 @@ Phase 2 测试：
 
 Phase 2 相关定向测试 12 项通过；全项目 75 项通过，保留 1 条第三方 Starlette 弃用警告。
 
+### 6.15 OCR / Vision Phase 3：Excel 图片提取
+
+本阶段新增 `ExcelImageExtractor`，负责从 openpyxl Workbook 中取得普通嵌入图片，并调用 Phase 2 的 `LocalImageAssetStorage`。现有 `ExcelDocumentParser` 的文字、表格和合并单元格规则保持不变。
+
+调用链：
+
+```text
+ExcelImageExtractor.extract(path, document_id, document_version_id)
+-> openpyxl load_workbook
+-> 按 Workbook 顺序遍历 Worksheet
+-> 读取 Worksheet 普通嵌入图片
+-> 取得图片 bytes / 实际输出 MIME / 可靠锚点
+-> LocalImageAssetStorage.store
+-> ExtractedExcelImage（内部提取结果）
+```
+
+`ExtractedExcelImage` 只表示尚未经过 OCR/Vision 的内部资产及来源定位，不是新的 Chunk、Evidence 或 Citation 模型。Phase 5/6 才会把图片理解结果转换回统一 `ParsedBlock`。
+
+第一版范围和限制：
+
+- 支持 openpyxl 3.1 能读取的普通嵌入图片。
+- openpyxl 没有公开的 Worksheet 图片迭代接口，因此在隔离的 Extractor 内集中使用其 `_images` 集合和图片 `_data()`；版本行为由自动化测试固定。
+- Pillow 是 openpyxl 读取图片 bytes 的直接运行依赖，项目声明为 `pillow>=10,<13`。
+- 图片序号按 Workbook 与 Sheet 的稳定遍历顺序从 1 开始，不在每个 Sheet 重新计数。
+- OneCellAnchor 保存起点单元格；TwoCellAnchor 可保存起止范围；没有可靠单元格锚点时返回 `None`，不得伪造位置。
+- JPEG/GIF/PNG 保留对应输出 MIME；openpyxl 对其他可读取格式转换成 PNG 时，保存的 MIME 也记录为 `image/png`。
+- SmartArt、Shape、Chart 和 openpyxl 无法读取的特殊 Office 对象仍明确不支持。
+- 本阶段不调用 OCR/Vision，不生成描述文字，不接入 DocumentService、Chroma、Citation 或前端。
+
+Phase 3 测试：
+
+| Test Case ID | 验证内容 |
+|---|---|
+| `TC-XLSX-IMAGE-001` | 两个 Sheet 的普通嵌入图片被提取并保存，保留 Sheet、序号、MIME 和锚点 |
+| `TC-XLSX-IMAGE-002` | 重复提取同一 Workbook 时 image_id 与位置稳定 |
+| `TC-XLSX-IMAGE-003` | 无图片 Workbook 返回空列表 |
+| `TC-XLSX-IMAGE-004` | 带图片 Workbook 的原有文字 ParsedBlock 结果不改变 |
+
+Phase 3 相关定向测试 12 项通过；全项目 79 项通过，保留 1 条第三方 Starlette 弃用警告。
+
 ---
 
 ## 7. 设计决定记录 / Decision Log
@@ -924,6 +965,10 @@ Phase 2 相关定向测试 12 项通过；全项目 75 项通过，保留 1 条�
 | DD-050 | image_id 根据文档、版本、图片序号、MIME 和内容哈希稳定生成；图片内容或来源变化时 ID 随之变化 | OCR/Vision Phase 2 Decision | Confirmed |
 | DD-051 | 图片存储组件集中负责路径拼接与 `store/find/read/delete`；业务层不接受或拼接任意服务器路径 | OCR/Vision Phase 2 Security Decision | Confirmed |
 | DD-052 | 第一版本地图片存储使用 MIME 白名单决定文件扩展名，并拒绝路径跳转标识 | OCR/Vision Phase 2 Security Decision | Confirmed |
+| DD-053 | Excel 图片提取使用独立 `ExcelImageExtractor` 调用既有图片存储；Phase 6 前不改变现有文字 Parser 和 DocumentService 调用链 | OCR/Vision Phase 3 Scope Decision | Confirmed |
+| DD-054 | 第一版只处理 openpyxl 可读取的普通嵌入图片；SmartArt、Shape、Chart 和特殊 Office 对象不在范围内 | OCR/Vision Phase 3 Scope Decision | Confirmed |
+| DD-055 | 图片序号按 Workbook/Sheet 顺序统一递增；只有 openpyxl 提供可靠锚点时才记录单元格定位 | OCR/Vision Phase 3 Location Decision | Confirmed |
+| DD-056 | Pillow 作为 openpyxl 图片读取的直接依赖；本阶段不调用 OCR/Vision，也不生成可搜索图片描述 | OCR/Vision Phase 3 Dependency + Scope Decision | Confirmed |
 
 ---
 

@@ -565,3 +565,41 @@ Phase 2 定向测试 12 项一次通过。第一次全量测试有两个旧 Chat
 ### 当前停止点
 
 图片保存、稳定 ID、查找、读取、删除和路径防护已经完成。Excel 图片提取属于 Phase 3，尚未开始。
+
+## 2026-09-13 — OCR / Vision / Image Evidence Phase 3
+
+### 本次目标
+
+从 Excel 中提取 openpyxl 能读取的普通嵌入图片，保存原图并保留 Sheet、图片序号和可靠单元格锚点。暂时不调用 OCR 或 Vision。
+
+### 为什么先使用独立 Extractor
+
+现有 `ExcelDocumentParser` 已经稳定负责文字、表格和合并单元格。Phase 3 只验证“能否取出并保存原图”，因此先用独立 `ExcelImageExtractor` 控制变化范围。Phase 6 再由 DocumentService 统一组装文字 Parser 和图片流程，避免当前阶段同时改变太多模块。
+
+### 数据流
+
+```text
+Workbook
+-> Worksheet 普通嵌入图片
+-> openpyxl 图片 bytes
+-> MIME 与可靠 anchor
+-> LocalImageAssetStorage
+-> ExtractedExcelImage
+```
+
+### 实现注意点
+
+- openpyxl 读取嵌入图片需要 Pillow，因此将它记录为项目直接依赖。
+- openpyxl 当前没有公开的 Worksheet 图片迭代接口，私有 `_images` 和 `_data()` 被限制在一个组件内部，并用测试固定行为。
+- openpyxl 对部分非 PNG/JPEG/GIF 图片会输出 PNG bytes，因此 MIME 必须按实际输出记录，不能只相信原文件扩展名。
+- 没有可靠 anchor 时宁可返回 `None`，不能伪造 Cell Range。
+
+### 验证
+
+- 两个 Sheet 两张图片、稳定 ID、无图片 Workbook、原有文字 Parser：12 passed。
+- 全项目回归：79 passed。
+- 1 条第三方 Starlette 弃用警告与本阶段无关。
+
+### 当前停止点
+
+Excel 图片已能被提取和保存，但还没有可搜索文字。下一阶段 Phase 4 将建立 OCR Provider 与扫描 PDF fallback；等待项目所有者指令。
