@@ -1,3 +1,4 @@
+import logging
 import math
 import re
 from collections import Counter
@@ -5,12 +6,42 @@ from pathlib import Path
 
 from pypdf import PdfReader
 
+from app.document_processing.pdf_renderer import PdfPageRenderer
+from app.document_processing.storage import LocalImageAssetStorage
 from app.schemas.document import ParsedBlock
+from app.services.ocr_service import OcrProvider
 
 
 _HEADING_PATTERN = re.compile(r"^\s*(?:\d+(?:\.\d+)*[.．]?\s+|第.+[章節])")
 _NUMBER_PATTERN = re.compile(r"\d+")
 _SPACE_PATTERN = re.compile(r"\s+")
+_LOGGER = logging.getLogger(__name__)
+
+
+class _PdfPageContent:
+    """保存一页的文字行及其提取来源 metadata。 / Stores page text lines and extraction-source metadata."""
+
+    def __init__(
+        self,
+        lines: list[str],
+        modality: str,
+        extraction_method: str,
+        image_id: str | None = None,
+        image_path: Path | None = None,
+        image_index: int | None = None,
+        mime_type: str | None = None,
+        confidence: float | None = None,
+    ) -> None:
+        """保存生成 ParsedBlock 时需要的一页数据。 / Stores one page's data required to create ParsedBlocks."""
+
+        self.lines = lines
+        self.modality = modality
+        self.extraction_method = extraction_method
+        self.image_id = image_id
+        self.image_path = image_path
+        self.image_index = image_index
+        self.mime_type = mime_type
+        self.confidence = confidence
 
 
 class PdfDocumentParser:
@@ -21,8 +52,12 @@ class PdfDocumentParser:
         maximum_chunk_characters: int = 1200,
         margin_candidate_lines: int = 2,
         repeated_margin_ratio: float = 0.6,
+        minimum_native_text_characters: int = 20,
+        ocr_provider: OcrProvider | None = None,
+        page_renderer: PdfPageRenderer | None = None,
+        image_storage: LocalImageAssetStorage | None = None,
     ) -> None:
-        """设置 Chunk 大小和重复页眉页脚检测范围。 / Configures chunk size and repeated header/footer detection."""
+        """设置文字规则，并可选配置扫描页 OCR fallback。 / Configures text rules and optional scanned-page OCR fallback."""
 
         if maximum_chunk_characters <= 0:
             raise ValueError("maximum_chunk_characters must be positive")
@@ -30,23 +65,160 @@ class PdfDocumentParser:
             raise ValueError("margin_candidate_lines must be positive")
         if not 0 < repeated_margin_ratio <= 1:
             raise ValueError("repeated_margin_ratio must be within (0, 1]")
+        if minimum_native_text_characters <= 0:
+            raise ValueError("minimum_native_text_characters must be positive")
+
+        if ocr_provider is None:
+            if page_renderer is not None or image_storage is not None:
+                raise ValueError("ocr_provider is required for OCR dependencies")
+        else:
+            if page_renderer is None or image_storage is None:
+                raise ValueError("OCR requires page_renderer and image_storage")
+
         self._maximum_chunk_characters = maximum_chunk_characters
         self._margin_candidate_lines = margin_candidate_lines
         self._repeated_margin_ratio = repeated_margin_ratio
+        self._minimum_native_text_characters = minimum_native_text_characters
+        self._ocr_provider = ocr_provider
+        self._page_renderer = page_renderer
+        self._image_storage = image_storage
 
-    def parse(self, path: Path) -> list[ParsedBlock]:
+    def parse(
+        self,
+        path: Path,
+        document_id: str | None = None,
+        document_version_id: str | None = None,
+    ) -> list[ParsedBlock]:
         """清理重复页边内容，并按页面、标题和段落生成 Block。 / Removes repeated margins and creates blocks by page, heading, and paragraph."""
 
-        page_lines = [
-            self._extract_lines(page.extract_text() or "")
-            for page in PdfReader(path).pages
-        ]
+        # 输入：PDF 路径；启用 OCR 时还需要文档 ID 和版本 ID。
+        # 输出：文字层或 OCR 生成的统一 ParsedBlock。
+        # 步骤：逐页读取文字 -> 必要时 OCR -> 清理页边 -> 生成 Block。
+        reader = PdfReader(path)
+        page_contents: list[_PdfPageContent] = []
+        page_lines: list[list[str]] = []
+
+        for page_index in range(len(reader.pages)):
+            page = reader.pages[page_index]
+            native_text = page.extract_text() or ""
+            page_content = self._read_page_content(
+                path,
+                page_index,
+                native_text,
+                document_id,
+                document_version_id,
+            )
+            page_contents.append(page_content)
+            page_lines.append(page_content.lines)
+
         repeated_margins = self._repeated_margin_patterns(page_lines)
         blocks: list[ParsedBlock] = []
-        for page_number, lines in enumerate(page_lines, start=1):
-            cleaned_lines = self._remove_repeated_margins(lines, repeated_margins)
-            blocks.extend(self._page_blocks(cleaned_lines, page_number))
+
+        for page_index in range(len(page_contents)):
+            page_content = page_contents[page_index]
+            cleaned_lines = self._remove_repeated_margins(
+                page_content.lines,
+                repeated_margins,
+            )
+            page_content.lines = cleaned_lines
+            page_number = page_index + 1
+            page_blocks = self._page_blocks(page_content, page_number)
+            blocks.extend(page_blocks)
+
         return blocks
+
+    def _read_page_content(
+        self,
+        path: Path,
+        page_index: int,
+        native_text: str,
+        document_id: str | None,
+        document_version_id: str | None,
+    ) -> _PdfPageContent:
+        """优先使用足够的文字层，否则执行可选 OCR fallback。 / Prefers sufficient text-layer content and otherwise runs optional OCR fallback."""
+
+        if not self._should_use_ocr(native_text):
+            return _PdfPageContent(
+                lines=self._extract_lines(native_text),
+                modality="text",
+                extraction_method="text_layer",
+            )
+
+        if document_id is None or document_version_id is None:
+            raise ValueError("document_id and document_version_id are required for OCR")
+
+        return self._read_page_with_ocr(
+            path,
+            page_index,
+            document_id,
+            document_version_id,
+        )
+
+    def _should_use_ocr(self, native_text: str) -> bool:
+        """只在已配置 OCR 且原生文字明显不足时返回 True。 / Returns True only when OCR is configured and native text is clearly insufficient."""
+
+        if self._ocr_provider is None:
+            return False
+
+        text_without_spaces = _SPACE_PATTERN.sub("", native_text)
+        return len(text_without_spaces) < self._minimum_native_text_characters
+
+    def _read_page_with_ocr(
+        self,
+        path: Path,
+        page_index: int,
+        document_id: str,
+        document_version_id: str,
+    ) -> _PdfPageContent:
+        """渲染、保存并 OCR 一张文字不足的 PDF 页面。 / Renders, stores, and OCRs one PDF page with insufficient text."""
+
+        if self._page_renderer is None:
+            raise RuntimeError("PDF page renderer is not configured")
+        if self._image_storage is None:
+            raise RuntimeError("Image storage is not configured")
+        if self._ocr_provider is None:
+            raise RuntimeError("OCR provider is not configured")
+
+        rendered_page = self._page_renderer.render(path, page_index)
+        page_number = page_index + 1
+        stored_asset = self._image_storage.store(
+            content=rendered_page.content,
+            document_id=document_id,
+            document_version_id=document_version_id,
+            image_index=page_number,
+            mime_type=rendered_page.mime_type,
+        )
+        ocr_result = self._ocr_provider.extract_text(stored_asset.path)
+
+        if not ocr_result.success or not ocr_result.text.strip():
+            _LOGGER.warning(
+                "OCR failed for document_version_id=%s page=%s provider=%s error=%s",
+                document_version_id,
+                page_number,
+                ocr_result.provider_name,
+                ocr_result.error_message,
+            )
+            return _PdfPageContent(
+                lines=[],
+                modality="image",
+                extraction_method="ocr",
+                image_id=stored_asset.image_id,
+                image_path=stored_asset.path,
+                image_index=stored_asset.image_index,
+                mime_type=stored_asset.mime_type,
+                confidence=ocr_result.confidence,
+            )
+
+        return _PdfPageContent(
+            lines=self._extract_lines(ocr_result.text),
+            modality="image",
+            extraction_method="ocr",
+            image_id=stored_asset.image_id,
+            image_path=stored_asset.path,
+            image_index=stored_asset.image_index,
+            mime_type=stored_asset.mime_type,
+            confidence=ocr_result.confidence,
+        )
 
     @staticmethod
     def _extract_lines(text: str) -> list[str]:
@@ -110,7 +282,7 @@ class PdfDocumentParser:
 
     def _page_blocks(
         self,
-        lines: list[str],
+        page_content: _PdfPageContent,
         page_number: int,
     ) -> list[ParsedBlock]:
         """将一页内容转换为标题和带 Section 的段落 Block。 / Converts one page into title and section-aware paragraph blocks."""
@@ -128,19 +300,21 @@ class PdfDocumentParser:
                     paragraph_lines,
                     page_number,
                     current_section,
+                    page_content,
                 )
             )
             paragraph_lines = []
 
-        for line in lines:
+        for line in page_content.lines:
             if _HEADING_PATTERN.match(line):
                 flush_paragraph()
                 current_section = line
                 blocks.append(
-                    ParsedBlock(
+                    self._create_block(
                         content=line,
                         content_type="title",
-                        page=page_number,
+                        page_content=page_content,
+                        page_number=page_number,
                         section=line,
                     )
                 )
@@ -154,6 +328,7 @@ class PdfDocumentParser:
         lines: list[str],
         page_number: int,
         section: str | None,
+        page_content: _PdfPageContent,
     ) -> list[ParsedBlock]:
         """在不跨页的前提下按最大字符数组合段落。 / Groups paragraphs by size without crossing page boundaries."""
 
@@ -165,10 +340,11 @@ class PdfDocumentParser:
             nonlocal current_parts, current_length
             if current_parts:
                 blocks.append(
-                    ParsedBlock(
+                    self._create_block(
                         content="\n".join(current_parts),
                         content_type="paragraph",
-                        page=page_number,
+                        page_content=page_content,
+                        page_number=page_number,
                         section=section,
                     )
                 )
@@ -185,6 +361,30 @@ class PdfDocumentParser:
                 current_length += (1 if current_length else 0) + len(part)
         flush_current()
         return blocks
+
+    @staticmethod
+    def _create_block(
+        content: str,
+        content_type: str,
+        page_content: _PdfPageContent,
+        page_number: int,
+        section: str | None,
+    ) -> ParsedBlock:
+        """把页面文字和提取来源统一转换成 ParsedBlock。 / Converts page text and extraction-source data into a ParsedBlock."""
+
+        return ParsedBlock(
+            content=content,
+            content_type=content_type,
+            modality=page_content.modality,
+            extraction_method=page_content.extraction_method,
+            image_id=page_content.image_id,
+            image_path=page_content.image_path,
+            image_index=page_content.image_index,
+            mime_type=page_content.mime_type,
+            confidence=page_content.confidence,
+            page=page_number,
+            section=section,
+        )
 
     def _split_long_line(self, line: str) -> list[str]:
         """确保单个超长文本行也不会突破 Chunk 上限。 / Ensures an individual long line also respects the chunk limit."""

@@ -603,3 +603,43 @@ Workbook
 ### 当前停止点
 
 Excel 图片已能被提取和保存，但还没有可搜索文字。下一阶段 Phase 4 将建立 OCR Provider 与扫描 PDF fallback；等待项目所有者指令。
+
+## 2026-09-13 — OCR / Vision / Image Evidence Phase 4
+
+### 本次目标
+
+为扫描 PDF 建立“原生文字优先、文字不足才 OCR”的 fallback，同时让 Parser 不依赖具体云厂商。
+
+### 数据流
+
+```text
+page.extract_text
+-> 文字充分：继续原有 PDF 规则
+-> 文字不足：PyMuPDF 渲染 PNG
+             -> LocalImageAssetStorage
+             -> OcrProvider
+             -> OcrResult
+             -> ParsedBlock
+```
+
+### 为什么需要两个 Protocol
+
+- `OcrProvider` 隔离 OCR 厂商，测试可以换成 Fake。
+- `PdfPageRenderer` 隔离 PDF 渲染工具，Parser 不需要知道 PyMuPDF 的 API。
+
+Parser 只负责决定什么时候需要 fallback，并把结果转换为 ParsedBlock。Renderer 负责产生图片，Storage 负责保存，Provider 负责识别文字。
+
+### 失败策略
+
+Fake OCR 可以返回 `success=False` 模拟 timeout。Parser 不把 `error_message` 当成正文，也不会因为单页结构化失败立即抛异常；如果最终没有任何 Block，DocumentService 仍会按主文档无可索引内容处理为 failed。
+
+### 验证
+
+- Fake OCR、PDF fallback、原生文字跳过 OCR、真实页面渲染：14 passed。
+- 真实图片型 PDF 已经通过真实 PyMuPDF Renderer，并到达 Fake OCR。
+- 全项目回归：87 passed。
+- 1 条第三方 Starlette 弃用警告与本阶段无关。
+
+### 当前停止点
+
+OCR 接口和 PDF fallback 已实现，但默认上传流程尚未组装 OCR，真实云 OCR 也未选择。下一阶段是 Vision Provider；等待项目所有者指令。

@@ -11,7 +11,7 @@
 | 项目 | 内容 |
 |---|---|
 | 文档名称 | Project 3 详细设计书 |
-| Document Version | v0.17-draft |
+| Document Version | v0.18-draft |
 | Status | Draft（草稿，尚未正式 Review） |
 | Created Date | 2026-08-24 |
 | Last Updated | 2026-09-13 |
@@ -19,7 +19,7 @@
 | Reviewed By | Pending（待审阅） |
 | Approved By | Pending（待批准） |
 | Related Phase | Phase 4 Coding |
-| Current Scope | 三条核心主链；Chat Agent/Tool；Document Ingestion、本地 Chroma、复杂文档解析与 OCR/Vision Phase 3 Excel 图片提取 |
+| Current Scope | 三条核心主链；Chat Agent/Tool；Document Ingestion、本地 Chroma、复杂文档解析与 OCR/Vision Phase 4 PDF OCR fallback |
 | Related Requirements | `REQ-F-001`～`REQ-F-005`、`REQ-F-007`～`REQ-F-016`、`NFR-SEC-001` |
 
 ### 0.1 状态定义
@@ -65,6 +65,7 @@
 | v0.15 | 2026-09-10 | 在现有 RAG 单一数据链中增加 OCR/Vision/Image Evidence metadata 契约，并保持旧文本 Chunk ID 兼容 | OCR/Vision Phase 1 Decision + Verification | Draft |
 | v0.16 | 2026-09-13 | 增加绑定 DocumentVersion 的本地图片资产存储、稳定 image_id、受控读取与路径跳转防护 | OCR/Vision Phase 2 Decision + Verification | Draft |
 | v0.17 | 2026-09-13 | 增加 Excel 普通嵌入图片提取、Sheet/锚点定位、MIME 识别及本地资产保存 | OCR/Vision Phase 3 Decision + Verification | Draft |
+| v0.18 | 2026-09-13 | 增加 OCR Provider 契约、Fake OCR、PDF 页面渲染和扫描页 OCR fallback | OCR/Vision Phase 4 Decision + Verification | Draft |
 
 变更历史只记录影响接口、数据模型、权限、异常处理或测试预期的重要变化；排版和错别字修正不单独增加版本。
 
@@ -907,6 +908,53 @@ Phase 3 测试：
 
 Phase 3 相关定向测试 12 项通过；全项目 79 项通过，保留 1 条第三方 Starlette 弃用警告。
 
+### 6.16 OCR / Vision Phase 4：PDF OCR fallback
+
+本阶段为 `PdfDocumentParser` 增加可选 OCR 能力。Parser 仍优先调用 pypdf 的 `page.extract_text()`；只有配置了 OCR 且页面非空白字符少于默认阈值 20 时，才渲染并 OCR 该页。
+
+调用链：
+
+```text
+PdfDocumentParser.parse
+-> page.extract_text()
+-> 原生文字是否足够？
+   -> 是：原有页眉页脚/标题/段落规则，extraction_method=text_layer
+   -> 否：PdfPageRenderer
+          -> LocalImageAssetStorage
+          -> OcrProvider.extract_text(image_path)
+          -> OcrResult
+          -> ParsedBlock(modality=image, extraction_method=ocr)
+```
+
+新增契约：
+
+- `OcrProvider`：Parser 只依赖 `extract_text(image_path)`，不依赖具体云厂商。
+- `OcrResult`：包含 `text`、`confidence`、`provider_name`、`success`、`error_message`。
+- `FakeOcrProvider`：测试专用，返回固定结果并记录调用路径，不访问网络。
+- `PdfPageRenderer`：隔离 PDF 页面渲染接口。
+- `PyMuPdfPageRenderer`：本地使用 PyMuPDF 将指定页渲染成 PNG；依赖范围为 `pymupdf>=1.24,<2.0`。
+
+OCR 成功时，渲染页面先由 `LocalImageAssetStorage` 保存。生成的每个 OCR `ParsedBlock` 都保留 page、image_id、内部 image_path、image_index、PNG MIME 和 confidence；进入 IndexedChunk 时内部路径仍会被 Phase 1 边界移除。
+
+失败策略：Provider 返回 `success=False` 或空文字时，该页不生成可搜索 Block，错误只写 warning 日志，不把 `error_message` 写入正文。若整份文档最终没有任何可索引内容，现有 DocumentService 仍会把版本标记为 failed。
+
+当前接入边界：`DocumentParserRegistry` 仍使用未配置 OCR 的默认 `PdfDocumentParser`，所以现有上传 API 行为不变；Phase 6 才正式组装 OCR Provider、Renderer、Image Storage 和文档上下文。真实云 OCR Provider、API Key、超时重试仍待后续决定，缺少 API Key 不影响应用启动。
+
+Phase 4 测试：
+
+| Test Case ID | 验证内容 |
+|---|---|
+| `TC-OCR-001` | Fake OCR 成功并记录图片路径 |
+| `TC-OCR-002` | Fake OCR 返回结构化失败，不访问网络 |
+| `TC-OCR-003` | 拒绝超出 0～1 的 confidence |
+| `TC-PDF-OCR-001` | 空文字层页面渲染、保存并生成 OCR ParsedBlock |
+| `TC-PDF-OCR-002` | 足够的原生文字层不会调用 Renderer 或 OCR |
+| `TC-PDF-OCR-003` | OCR 失败只跳过该页，不直接抛出 Parser 异常 |
+| `TC-PDF-OCR-004` | PyMuPDF 把真实图片型 PDF 页面渲染为 PNG |
+| `TC-PDF-OCR-005` | 真实图片型 PDF 经真实 Renderer 到达 Fake OCR |
+
+Phase 4 相关定向测试 14 项通过；全项目 87 项通过，保留 1 条第三方 Starlette 弃用警告。
+
 ---
 
 ## 7. 设计决定记录 / Decision Log
@@ -969,6 +1017,10 @@ Phase 3 相关定向测试 12 项通过；全项目 79 项通过，保留 1 条�
 | DD-054 | 第一版只处理 openpyxl 可读取的普通嵌入图片；SmartArt、Shape、Chart 和特殊 Office 对象不在范围内 | OCR/Vision Phase 3 Scope Decision | Confirmed |
 | DD-055 | 图片序号按 Workbook/Sheet 顺序统一递增；只有 openpyxl 提供可靠锚点时才记录单元格定位 | OCR/Vision Phase 3 Location Decision | Confirmed |
 | DD-056 | Pillow 作为 openpyxl 图片读取的直接依赖；本阶段不调用 OCR/Vision，也不生成可搜索图片描述 | OCR/Vision Phase 3 Dependency + Scope Decision | Confirmed |
+| DD-057 | Parser 只依赖 OcrProvider 契约；测试使用不联网的 FakeOcrProvider，正式云 Provider 后续独立实现 | OCR/Vision Phase 4 Provider Decision | Confirmed |
+| DD-058 | PDF 默认以 20 个非空白字符作为原生文字充分性阈值；仅在 OCR 已配置且低于阈值时 fallback | OCR/Vision Phase 4 Fallback Decision | Confirmed |
+| DD-059 | PDF 扫描页由 PyMuPDF 本地渲染为 PNG，并先保存为版本图片资产，再交给 OCR Provider | OCR/Vision Phase 4 Rendering Decision | Confirmed |
+| DD-060 | OCR 成功结果回到统一 ParsedBlock；结构化失败只记录 warning 且不进入可搜索正文 | OCR/Vision Phase 4 Failure Decision | Confirmed |
 
 ---
 

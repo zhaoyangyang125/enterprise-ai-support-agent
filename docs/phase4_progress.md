@@ -4,7 +4,23 @@ Last updated: 2026-09-13
 
 ## Current Scope
 
-OCR / Vision / Image Evidence Phase 3：Excel 普通嵌入图片提取已完成；等待用户指令后才进入 Phase 4。
+OCR / Vision / Image Evidence Phase 4：OCR Provider 与 PDF 扫描页 fallback 已完成；等待用户指令后才进入 Phase 5。
+
+## 2026-09-13 OCR / Vision Phase 4 已完成
+
+- 当前分支：`feature/ocr-vision-phase4-pdf-ocr`，从 Phase 3 提交 `f4301f6` 创建。
+- 新增 `OcrProvider`、`OcrResult` 和不联网的 `FakeOcrProvider`。
+- 新增 `PdfPageRenderer` 与本地 `PyMuPdfPageRenderer`，当前验证版本为 PyMuPDF `1.28.2`。
+- `PdfDocumentParser` 优先使用原生文字层；只有已配置 OCR 且非空白文字少于默认 20 字符时才 fallback。
+- 扫描页渲染后先保存到版本 assets，再交给 OCR；成功结果生成统一 ParsedBlock。
+- 原生文字 Block 明确记录 `extraction_method=text_layer`；OCR Block 记录 `modality=image` 和 `extraction_method=ocr`。
+- OCR 结构化失败只记录 warning 并跳过该页，不把错误信息写进正文。
+- 真实图片型 PDF、真实 PyMuPDF Renderer 与 Fake OCR 的集成路径已验证。
+- Phase 4 定向测试：`14 passed`。
+- 全量测试：`87 passed`，保留 1 条第三方 Starlette 弃用警告。
+- 默认 DocumentParserRegistry 尚未配置 OCR，当前上传 API 尚不会自动 OCR；正式组装留到 Phase 6。
+- 尚未实现真实云 OCR、Vision Provider、授权图片 API 或前端图片展示。
+- 安全停止点：Phase 4 完成后停止，下一步须等待项目所有者指令。
 
 ## 2026-09-13 OCR / Vision Phase 3 已完成
 
