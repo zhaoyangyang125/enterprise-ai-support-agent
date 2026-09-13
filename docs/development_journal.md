@@ -533,3 +533,35 @@ ParsedBlock -> IndexedChunk -> Chroma -> RetrievedChunk -> SourceCitation
 ### 当前停止点
 
 Phase 1 已完成。图片存储、提取、OCR、Vision、图片访问 API 和前端展示均未开始，等待项目所有者发出下一步指令。
+
+## 2026-09-13 — OCR / Vision / Image Evidence Phase 2
+
+### 本次目标
+
+建立最小本地图片资产存储，使后续 Excel/PDF Parser 提取图片后有统一保存位置。这个阶段不修改 Parser，也不调用 OCR 或 Vision。
+
+### 数据流
+
+```text
+图片 bytes
++ document_id / document_version_id
++ image_index / mime_type
+-> 生成稳定 image_id
+-> 保存到对应 DocumentVersion 的 assets 目录
+-> 返回 StoredImageAsset
+```
+
+### 设计理由
+
+- 图片属于具体文档版本，所以和原文保存在同一版本目录下。
+- 调用方使用 `store/find/read/delete`，不需要知道真实目录怎么拼接。
+- image_id 包含内容哈希和来源身份，重复处理同一张图片时结果稳定。
+- 外部输入不能直接成为文件路径；文档标识、image_id 和 MIME 都需要白名单或格式验证。
+
+### 测试中遇到的问题
+
+Phase 2 定向测试 12 项一次通过。第一次全量测试有两个旧 Chat API 用例失败，堆栈显示 Chroma 尝试写只读数据库。获得独立工作树写权限后，没有修改代码，原样重跑得到 75 项全部通过，因此判断为测试环境权限问题，而不是 Phase 2 回归。
+
+### 当前停止点
+
+图片保存、稳定 ID、查找、读取、删除和路径防护已经完成。Excel 图片提取属于 Phase 3，尚未开始。

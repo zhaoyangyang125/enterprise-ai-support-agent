@@ -11,15 +11,15 @@
 | 项目 | 内容 |
 |---|---|
 | 文档名称 | Project 3 详细设计书 |
-| Document Version | v0.15-draft |
+| Document Version | v0.16-draft |
 | Status | Draft（草稿，尚未正式 Review） |
 | Created Date | 2026-08-24 |
-| Last Updated | 2026-09-10 |
+| Last Updated | 2026-09-13 |
 | Prepared By | 项目负责人；Codex 辅助整理 |
 | Reviewed By | Pending（待审阅） |
 | Approved By | Pending（待批准） |
 | Related Phase | Phase 4 Coding |
-| Current Scope | 三条核心主链；Chat Agent/Tool；Document Ingestion、本地 Chroma、复杂文档解析与 OCR/Vision Phase 1 metadata 基础 |
+| Current Scope | 三条核心主链；Chat Agent/Tool；Document Ingestion、本地 Chroma、复杂文档解析与 OCR/Vision Phase 2 本地图片资产存储 |
 | Related Requirements | `REQ-F-001`～`REQ-F-005`、`REQ-F-007`～`REQ-F-016`、`NFR-SEC-001` |
 
 ### 0.1 状态定义
@@ -63,6 +63,7 @@
 | v0.13 | 2026-09-05 | 增加不会扩大权限的 metadata Filtering、可显示 Citation 定位与分数，以及六题小型检索回归评测 | Phase 4 Implementation + Verification | Draft |
 | v0.14 | 2026-09-05 | 增加本地工作界面、ADMIN 文档上传/状态 API、上传者读取权限和原始文件名保护 | Phase 4 Implementation + E2E Verification | Draft |
 | v0.15 | 2026-09-10 | 在现有 RAG 单一数据链中增加 OCR/Vision/Image Evidence metadata 契约，并保持旧文本 Chunk ID 兼容 | OCR/Vision Phase 1 Decision + Verification | Draft |
+| v0.16 | 2026-09-13 | 增加绑定 DocumentVersion 的本地图片资产存储、稳定 image_id、受控读取与路径跳转防护 | OCR/Vision Phase 2 Decision + Verification | Draft |
 
 变更历史只记录影响接口、数据模型、权限、异常处理或测试预期的重要变化；排版和错别字修正不单独增加版本。
 
@@ -819,6 +820,52 @@ Phase 1 测试：
 
 定向测试 20 项通过；全项目 71 项通过，保留 1 条第三方 Starlette 弃用警告。
 
+### 6.14 OCR / Vision Phase 2：本地图片资产存储
+
+本阶段只提供后续 Parser 可以调用的图片存储组件，不修改 PDF/Excel Parser，也不接入 OCR、Vision、图片 API 或前端。
+
+存储调用链：
+
+```text
+图片 bytes + document_id + document_version_id + image_index + mime_type
+-> LocalImageAssetStorage.store()
+-> SHA-256 稳定 image_id
+-> document_storage/{document_id}/{document_version_id}/assets/{image_id}.{suffix}
+-> StoredImageAsset
+```
+
+`StoredImageAsset` 只用于服务器内部传递 `image_id`、内部 `Path`、图片序号和 MIME 类型，不属于新的 Chunk/Evidence 模型。业务调用方通过 `store/find/read/delete` 操作图片，不自行拼接实际文件路径。
+
+稳定 `image_id` 由以下内容共同计算：
+
+```text
+document_id
++ document_version_id
++ image_index
++ mime_type
++ image content SHA-256
+```
+
+相同来源、序号、类型和内容会得到相同 ID；同一版本中序号不同的图片会得到不同 ID。第一版本地存储只接受 `image/png`、`image/jpeg`、`image/gif`、`image/bmp`、`image/webp`。
+
+安全边界：
+
+- `find/read/delete` 只接受文档 ID、版本 ID 和系统生成格式的 `image_id`，不接受任意路径。
+- 文档标识拒绝 `/`、反斜杠和 `..` 路径跳转形式。
+- 图片文件名由系统生成的 ID 与 MIME 白名单扩展名组成。
+- 内部 Path 不会在本阶段进入 API、Chroma 或 SourceCitation。
+
+Phase 2 测试：
+
+| Test Case ID | 验证内容 |
+|---|---|
+| `TC-STORAGE-IMAGE-001` | 图片保存到版本 assets 目录，并可按 ID 查找和读取 |
+| `TC-STORAGE-IMAGE-002` | 相同来源与内容生成稳定 image_id；不同序号得到不同 ID |
+| `TC-STORAGE-IMAGE-003` | 图片可以删除，删除后读取明确失败 |
+| `TC-STORAGE-IMAGE-004` | 拒绝路径跳转、空内容、非法 image_id 和非白名单 MIME |
+
+Phase 2 相关定向测试 12 项通过；全项目 75 项通过，保留 1 条第三方 Starlette 弃用警告。
+
 ---
 
 ## 7. 设计决定记录 / Decision Log
@@ -873,6 +920,10 @@ Phase 1 测试：
 | DD-046 | `content_type` 表示结构角色，`modality` 独立表示 `text/image`；提取方法使用 `text_layer/native_excel/ocr/vision` | OCR/Vision Phase 1 Decision | Confirmed |
 | DD-047 | `image_path` 只用于服务器内部，不进入 IndexedChunk、Chroma 或 API；Chroma 也不保存图片二进制、Base64 或 URL | OCR/Vision Phase 1 Security Decision | Confirmed |
 | DD-048 | 旧文本 Chunk ID 算法保持不变；图片证据存在 `image_id` 时才追加图片身份信息 | OCR/Vision Phase 1 Compatibility Decision | Confirmed |
+| DD-049 | 派生图片与 DocumentVersion 绑定，保存在原文目录下的 `assets` 子目录；不引入 S3 | OCR/Vision Phase 2 Decision | Confirmed |
+| DD-050 | image_id 根据文档、版本、图片序号、MIME 和内容哈希稳定生成；图片内容或来源变化时 ID 随之变化 | OCR/Vision Phase 2 Decision | Confirmed |
+| DD-051 | 图片存储组件集中负责路径拼接与 `store/find/read/delete`；业务层不接受或拼接任意服务器路径 | OCR/Vision Phase 2 Security Decision | Confirmed |
+| DD-052 | 第一版本地图片存储使用 MIME 白名单决定文件扩展名，并拒绝路径跳转标识 | OCR/Vision Phase 2 Security Decision | Confirmed |
 
 ---
 

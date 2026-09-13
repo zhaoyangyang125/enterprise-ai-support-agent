@@ -1,10 +1,25 @@
 # Phase 4 Progress
 
-Last updated: 2026-09-10
+Last updated: 2026-09-13
 
 ## Current Scope
 
-OCR / Vision / Image Evidence Phase 1：Schema 与 metadata 扩展已完成；等待用户指令后才进入 Phase 2。
+OCR / Vision / Image Evidence Phase 2：本地图片资产存储已完成；等待用户指令后才进入 Phase 3。
+
+## 2026-09-13 OCR / Vision Phase 2 已完成
+
+- 当前分支：`feature/ocr-vision-phase2-image-storage`，从 Phase 1 提交 `11bd113` 创建。
+- 新增 `StoredImageAsset`，只用于服务器内部表示已保存的派生图片。
+- 新增 `LocalImageAssetStorage`，提供 `store/find/read/delete`。
+- 图片保存到 `document_storage/{document_id}/{document_version_id}/assets/`。
+- image_id 根据文档、版本、图片序号、MIME 和内容哈希稳定生成。
+- 支持 PNG、JPEG、GIF、BMP、WebP MIME 白名单。
+- 拒绝空内容、不合法序号、非法 image_id、非白名单 MIME 和路径跳转标识。
+- Phase 2 定向测试：`12 passed`。
+- 第一次全量测试因沙箱不能写现有 `chroma_data`，结果为 `73 passed, 2 failed`；获得本地写权限后未修改代码直接重跑。
+- 最终全量测试：`75 passed`，保留 1 条第三方 Starlette 弃用警告。
+- 尚未修改 Excel/PDF Parser，尚未接入 OCR、Vision、图片读取 API 或前端展示。
+- 安全停止点：Phase 2 完成后停止，下一步须等待项目所有者指令。
 
 ## 2026-09-10 OCR / Vision Phase 1 已完成
 
