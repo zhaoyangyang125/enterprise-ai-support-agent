@@ -11,7 +11,7 @@
 | 项目 | 内容 |
 |---|---|
 | 文档名称 | Project 3 详细设计书 |
-| Document Version | v0.18-draft |
+| Document Version | v0.19-draft |
 | Status | Draft（草稿，尚未正式 Review） |
 | Created Date | 2026-08-24 |
 | Last Updated | 2026-09-13 |
@@ -19,7 +19,7 @@
 | Reviewed By | Pending（待审阅） |
 | Approved By | Pending（待批准） |
 | Related Phase | Phase 4 Coding |
-| Current Scope | 三条核心主链；Chat Agent/Tool；Document Ingestion、本地 Chroma、复杂文档解析与 OCR/Vision Phase 4 PDF OCR fallback |
+| Current Scope | 三条核心主链；Chat Agent/Tool；Document Ingestion、本地 Chroma、复杂文档解析、Excel 边框表格与上下文关联、OCR/Vision Phase 4 PDF OCR fallback |
 | Related Requirements | `REQ-F-001`～`REQ-F-005`、`REQ-F-007`～`REQ-F-016`、`NFR-SEC-001` |
 
 ### 0.1 状态定义
@@ -66,6 +66,7 @@
 | v0.16 | 2026-09-13 | 增加绑定 DocumentVersion 的本地图片资产存储、稳定 image_id、受控读取与路径跳转防护 | OCR/Vision Phase 2 Decision + Verification | Draft |
 | v0.17 | 2026-09-13 | 增加 Excel 普通嵌入图片提取、Sheet/锚点定位、MIME 识别及本地资产保存 | OCR/Vision Phase 3 Decision + Verification | Draft |
 | v0.18 | 2026-09-13 | 增加 OCR Provider 契约、Fake OCR、PDF 页面渲染和扫描页 OCR fallback | OCR/Vision Phase 4 Decision + Verification | Draft |
+| v0.19 | 2026-09-13 | 将 Excel 表格识别收紧为闭合边框矩形，并把临近标题、说明和备注加入表格检索正文 | Phase 4 Decision + Verification | Draft |
 
 变更历史只记录影响接口、数据模型、权限、异常处理或测试预期的重要变化；排版和错别字修正不单独增加版本。
 
@@ -955,6 +956,40 @@ Phase 4 测试：
 
 Phase 4 相关定向测试 14 项通过；全项目 87 项通过，保留 1 条第三方 Starlette 弃用警告。
 
+### 6.17 Excel 闭合边框表格与临近上下文
+
+本轮修正早期“连续多行且不是键值对就默认作为表格”的宽松规则。键值对仍优先按照其确定性结构识别；其余候选区域只有同时满足以下条件才分类为 `table`：
+
+- 候选矩形包含两个以上单元格。
+- 最上方所有单元格具有可见上边框。
+- 最下方所有单元格具有可见下边框。
+- 最左侧所有单元格具有可见左边框。
+- 最右侧所有单元格具有可见右边框。
+
+没有闭合边框的连续多行不得仅根据行数推断为表格，统一保留换行并生成 `paragraph`。本阶段不使用主观评分，也不让 LLM 决定原始文档结构。
+
+表格生成后，Parser 检查同一 Sheet 中相邻的前后 Block。距离最多允许一行空白：
+
+- 前一个 Block 为 `title` 或 `paragraph` 时，作为表格前置说明加入表格的检索正文。
+- 后一个 Block 为 `note` 时，作为表格备注加入表格的检索正文。
+- 原独立 Block 继续保留，表格的 `cell_range` 仍只指向真实表格矩形，不能把附近文字伪装成表格单元格位置。
+- 新章节标题不是后置备注，不会从表格后方向前错误关联。
+- 无边框说明与紧随其后的有边框区域没有空行时，Parser 先按边框状态变化拆成两个候选区域，再进行上下文关联。
+
+第一版明确限制：当前规则不负责识别同一行内并排且没有空列分隔的多个表格，也不处理 Shape、SmartArt 或视觉箭头关系。
+
+相关测试：
+
+| Test Case ID | 验证内容 |
+|---|---|
+| `TC-PARSE-XLSX-109` | 无边框连续多行分类为 paragraph |
+| `TC-PARSE-XLSX-110` | 超过两个单元格的闭合边框矩形分类为 table |
+| `TC-PARSE-XLSX-111` | 缺少一侧边框的开放区域不能分类为 table |
+| `TC-PARSE-XLSX-112` | 临近标题和备注进入表格检索正文，表格 Cell Range 不扩大 |
+| `TC-PARSE-XLSX-113` | 无边框说明紧贴有边框表格时仍能拆分并关联 |
+
+本轮 Excel 定向测试 9 项通过；全项目 92 项通过，保留 1 条与本功能无关的第三方 Starlette 弃用警告。
+
 ---
 
 ## 7. 设计决定记录 / Decision Log
@@ -992,7 +1027,7 @@ Phase 4 相关定向测试 14 项通过；全项目 87 项通过，保留 1 条�
 | DD-029 | Excel 使用区域分类和多行 Header 路径；不得通过全 Sheet 无条件展开破坏标题与表边界 | Phase 4 Decision | Confirmed |
 | DD-030 | 使用完全虚构的日语 HMI Workbook 作为复杂 Parser 的固定回归样本，不使用真实公司资料 | Phase 4 Decision | Confirmed |
 | DD-031 | Excel Parser 使用非破坏式 merged-cell view；不通过 unmerge 和全 Sheet 写回破坏原始结构 | Phase 4 Implementation | Confirmed |
-| DD-032 | 两列两行的歧义区域默认按 Table；两列 Key-Value 至少三行，多组 Key-Value 通过空列分隔识别 | Phase 4 Implementation + Test Failure Analysis | Confirmed |
+| DD-032 | 两列两行的歧义区域默认按 Table；该宽松默认规则已由 DD-061 取代 | Phase 4 Implementation + Test Failure Analysis | Superseded |
 | DD-033 | PDF 页眉页脚只在页边候选行中检测；规范化后至少出现在 60% 页面且不少于 2 页才删除 | Phase 4 Implementation | Confirmed |
 | DD-034 | PDF Chunk 不跨页；标题写入 `section`，超长文本只在当前页内切分 | Phase 4 Implementation | Confirmed |
 | DD-035 | `content_type` 与 `cell_range` 从 ParsedBlock 贯通 IndexedChunk、Chroma 和 SourceCitation；旧索引缺少类型时默认 `paragraph` | Phase 4 Implementation | Confirmed |
@@ -1021,6 +1056,9 @@ Phase 4 相关定向测试 14 项通过；全项目 87 项通过，保留 1 条�
 | DD-058 | PDF 默认以 20 个非空白字符作为原生文字充分性阈值；仅在 OCR 已配置且低于阈值时 fallback | OCR/Vision Phase 4 Fallback Decision | Confirmed |
 | DD-059 | PDF 扫描页由 PyMuPDF 本地渲染为 PNG，并先保存为版本图片资产，再交给 OCR Provider | OCR/Vision Phase 4 Rendering Decision | Confirmed |
 | DD-060 | OCR 成功结果回到统一 ParsedBlock；结构化失败只记录 warning 且不进入可搜索正文 | OCR/Vision Phase 4 Failure Decision | Confirmed |
+| DD-061 | 键值对规则优先；其余 Excel 候选区域只有边框形成闭合矩形且超过两个单元格时才分类为 table，无闭合边框的多行区域分类为 paragraph | Phase 4 Decision | Confirmed |
+| DD-062 | 同一 Sheet、最多间隔一行空白的前置 title/paragraph 与后置 note 加入表格检索正文，但保留原独立 Block 和真实表格 Cell Range | Phase 4 Decision | Confirmed |
+| DD-063 | Excel 原始结构分类继续使用确定性规则，不使用未经评测的特征评分或 LLM 推断 | Phase 4 Decision | Confirmed |
 
 ---
 

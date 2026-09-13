@@ -4,7 +4,21 @@ Last updated: 2026-09-13
 
 ## Current Scope
 
-OCR / Vision / Image Evidence Phase 4：OCR Provider 与 PDF 扫描页 fallback 已完成；等待用户指令后才进入 Phase 5。
+Excel 闭合边框表格识别与临近上下文关联已完成并通过验证；OCR / Vision Phase 4 已保持完成状态，尚未进入 Phase 5。
+
+## 2026-09-13 Excel 表格识别改进
+
+- 当前分支：`feature/excel-bordered-table-context`，从 OCR Phase 4 提交 `342fd07` 创建。
+- 废止“连续多行且不是 Key-Value 就默认为 Table”的宽松规则。
+- 键值对仍优先识别；其余候选区域必须超过两个单元格且外边框形成闭合矩形，才分类为 `table`。
+- 无边框或边框不闭合的连续多行保留换行并分类为 `paragraph`。
+- 同一 Sheet 中距离最多一行空白的前置标题/说明和后置备注，会加入表格检索正文。
+- 无边框说明紧贴有边框表格时，会先按边框状态变化拆分，再进行关联。
+- 独立标题与备注 Block 仍保留；表格 `cell_range` 不扩大，继续表示真实表格位置。
+- 新增无边框多行、闭合边框、开放边框和表格上下文测试。
+- 原有 `app/services/document_service.py` 学习注释属于项目所有者修改，本轮不覆盖、不纳入功能范围。
+- Excel 定向测试：`9 passed`。
+- 全量测试：`92 passed`，保留 1 条与本功能无关的第三方 Starlette 弃用警告。
 
 ## 2026-09-13 OCR / Vision Phase 4 已完成
 

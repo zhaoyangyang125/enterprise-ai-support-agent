@@ -2,6 +2,7 @@ import hashlib
 from pathlib import Path
 
 from openpyxl import Workbook
+from openpyxl.styles import Border, Side
 import pytest
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
@@ -40,6 +41,18 @@ def create_excel(path: Path) -> None:
     sheet.title = "Travel"
     sheet.append(["Rule", "Value"])
     sheet.append(["Hotel limit", 10000])
+
+    thin_side = Side(style="thin")
+    table_border = Border(
+        left=thin_side,
+        right=thin_side,
+        top=thin_side,
+        bottom=thin_side,
+    )
+    for row in sheet.iter_rows(min_row=1, max_row=2, min_col=1, max_col=2):
+        for cell in row:
+            cell.border = table_border
+
     workbook.save(path)
     workbook.close()
 
