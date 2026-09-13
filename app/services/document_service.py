@@ -30,16 +30,17 @@ class DocumentService:
         self._parser_registry = parser_registry
         self._vector_index = vector_index
 
+
     def ingest(
-        self,
-        source_path: Path,
-        document_id: str,
-        title: str,
-        document_version_id: str,
-        version_label: str,
-        source_name: str | None = None,
-        grant_read_to_user_id: str | None = None,
-    ) -> DocumentIngestionResult:
+        self,  # 当前 DocumentService 对象，由 Python 自动传入
+        source_path: Path,  # 临时上传文件在本地的路径
+        document_id: str,  # 文档编号，例如 DOC-001
+        title: str,  # 文档标题，例如“员工休假规定”
+        document_version_id: str,  # 文档版本的唯一编号，例如 DOCVER-001
+        version_label: str,  # 给用户看的版本名称，例如 v1.0
+        source_name: str | None = None,  # 原始文件名；没有传入时使用路径中的文件名
+        grant_read_to_user_id: str | None = None,  # 处理成功后授予读取权限的用户编号
+    ) -> DocumentIngestionResult:  # 返回文档处理结果
         """将本地 PDF/Excel 原文件转换并索引为可授权检索的 Chunk。 / Converts and indexes a local PDF/Excel original into authorization-ready chunks."""
 
         self._repository.start_processing(

@@ -169,12 +169,16 @@ class ExcelDocumentParser:
         reader = _WorksheetReader(worksheet)
         blocks: list[ParsedBlock] = []
 
-        # 普通的连续非空行先暂存在这里，遇到空行或独立标题后再一起转换。
-        # Ordinary consecutive rows are buffered until a separator is found.
+        # 暂存尚未处理的普通行号，例如 [3, 4, 5]。
+        # 遇到空行、独立标题/备注或 Sheet 结束时，再一起解析这些行。
         pending_rows: list[int] = []
-        current_section: str | None = None
-        row_number = 1
 
+        # 当前内容所属的章节名称，例如“2. 申请条件”。
+        # 初始还没有遇到章节标题，所以是 None。
+        current_section: str | None = None
+
+        # 当前正在读取的 Excel 行号，从第 1 行开始。
+        row_number = 1
         while row_number <= worksheet.max_row:
             standalone_result = self._find_standalone_block(
                 reader,
@@ -230,17 +234,27 @@ class ExcelDocumentParser:
 
     def _build_region_blocks(
         self,
-        reader: _WorksheetReader,
-        rows: list[int],
-        current_section: str | None,
-    ) -> list[ParsedBlock]:
-        """按边框变化拆分连续行，再分别建立内容块。 / Splits consecutive rows when border usage changes and builds blocks."""
+        reader: _WorksheetReader,  # 用于读取当前 Sheet 的单元格内容和边框
+        rows: list[int],  # 待处理的行号，例如 [3, 4, 5, 6]
+        current_section: str | None,  # 这些行所属的章节，可能还没有章节
+    ) -> list[ParsedBlock]:  # 返回生成的多个内容块
+        """按有无边框的变化拆分连续行，再分别生成内容块。"""
 
+        # 没有待处理的行，就返回空列表。
         if not rows:
             return []
 
+        # 保存分好组的行号，例如 [[3, 4], [5, 6]]。
+        # 外层列表放多个组，内层列表放一组中的行号。
         row_groups: list[list[int]] = []
+
+        # 暂存当前正在收集的一组行号，例如 [3, 4]。
         current_group: list[int] = []
+
+        # 记录当前这一组是否有边框：
+        # None：尚未开始收集，状态未知
+        # True：这一组的行有边框
+        # False：这一组的行没有边框
         current_group_has_border: bool | None = None
 
         for row_number in rows:
@@ -626,8 +640,29 @@ class ExcelDocumentParser:
 
         for row_number in rows:
             cells = reader.get_real_nonempty_cells(row_number)
+            # cells 中每个元素都是 (列号, 单元格值)，例如：
+            # [(1, "姓名"), (2, "张三"), (4, "部门"), (5, "开发部")]
+            #
+            # for column_number, _value in cells
+            # 会把每个元组解包：
+            # column_number = 列号
+            # _value = 单元格值（这里不使用，所以用 _value 表示）
+            #
+            # 最终只提取所有非空单元格的列号：
+            # columns = [1, 2, 4, 5]
+            #
+            # 后面会利用 columns 判断：
+            # 1 和 2 是否相邻、4 和 5 是否相邻，
+            # 以及两组键值对之间是否存在空列。
             columns = [column_number for column_number, _value in cells]
-
+            # TODO:
+            # 当前 Key-Value 识别主要依赖“偶数列 + 相邻成对 + 多组之间有空列”的启发式规则。
+            # 对部分偶数列表格可能存在误判，后续可增加：
+            # - 表头特征判断
+            # - 多行列结构一致性判断
+            # - Label/Value 类型特征
+            # - 边框布局判断
+            # 来进一步区分普通 table 和 key_value 区域。
             # 每一行至少需要一对，而且单元格数量必须是偶数。
             if len(columns) < 2 or len(columns) % 2 != 0:
                 return False
@@ -646,6 +681,14 @@ class ExcelDocumentParser:
                 pair_start += 2
 
             # 一行有多组键值对时，各组之间必须留有空列。
+            # 一行如果有多组 Label/Value，例如：
+            # 姓名 | 张三 | 空列 | 部门 | 开发部
+            # pairs 会是 [(1, 2), (4, 5)]。
+            #
+            # 为了避免把普通连续列的表格
+            # 例如：姓名 | 年龄 | 部门 | 职级
+            # 错判为多组 Key-Value，
+            # 要求不同键值对之间至少存在一列空白。
             if len(pairs) > 1:
                 has_gap_between_pairs = False
                 for pair_index in range(len(pairs) - 1):
