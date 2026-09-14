@@ -1,6 +1,10 @@
 # Phase 4 Progress
 
-Last updated: 2026-09-13
+Last updated: 2026-09-14
+
+## 2026-09-14 Excel 边界修正
+
+修正单行闭合表格、两行表头的关联距离、无关前置段落误关联。附加说明正文标明自身来源。新增4项回归，全量96 passed，保留1条原有第三方警告。下一步为 OCR/Vision Phase 5；空白边缘及同组相邻表格仍有已知限制。
 
 ## Current Scope
 

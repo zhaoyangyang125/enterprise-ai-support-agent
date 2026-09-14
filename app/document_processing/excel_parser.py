@@ -399,7 +399,9 @@ class ExcelDocumentParser:
             )
 
         # 第二种：只有一行而且不是键值对，作为普通段落保存。
-        if len(rows) == 1:
+        if len(rows) == 1 and not self._has_closed_table_border(
+            reader, rows, first_column, last_column
+        ):
             return ParsedBlock(
                 content=self._build_paragraph_text(
                     reader,
@@ -541,7 +543,7 @@ class ExcelDocumentParser:
                 previous_block = blocks[block_index - 1]
                 if self._is_table_context_before(previous_block, block):
                     context_parts.append(
-                        f"表格前置说明 / Table context before: {previous_block.content}"
+                        f"表格前置说明 [{previous_block.sheet}!{previous_block.cell_range}]: {previous_block.content}"
                     )
 
             context_parts.append(block.content)
@@ -551,7 +553,7 @@ class ExcelDocumentParser:
                 next_block = blocks[next_index]
                 if self._is_table_note_after(block, next_block):
                     context_parts.append(
-                        f"表格备注 / Table note: {next_block.content}"
+                        f"表格备注 [{next_block.sheet}!{next_block.cell_range}]: {next_block.content}"
                     )
 
             enriched_content = "\n".join(context_parts)
@@ -571,6 +573,13 @@ class ExcelDocumentParser:
             return False
 
         if candidate.content_type not in ("title", "paragraph"):
+            return False
+
+        # 距离近不代表相关；只接受明确的表名或表格引导语。
+        text = candidate.content.strip()
+        prefixes = ("表", "下表", "本表", "以下の表", "次の表", "下記の表", "table ")
+        normalized_text = text.casefold()
+        if not normalized_text.startswith(prefixes):
             return False
 
         return self._blocks_are_nearby(candidate, table)
@@ -597,12 +606,20 @@ class ExcelDocumentParser:
     ) -> bool:
         """判断两个内容块之间是否最多只有一行空白。 / Checks whether blocks have at most one blank row between them."""
 
-        first_last_row = self._last_row_number(first_block.rows)
-        second_first_row = self._first_row_number(second_block.rows)
-        if first_last_row is None or second_first_row is None:
+        # table.rows 只表示数据行，不能用它计算与表头的距离。
+        if first_block.cell_range is None or second_block.cell_range is None:
             return False
 
-        row_distance = second_first_row - first_last_row
+        first_range = CellRange(first_block.cell_range)
+        second_range = CellRange(second_block.cell_range)
+        overlaps_columns = (
+            first_range.min_col <= second_range.max_col
+            and second_range.min_col <= first_range.max_col
+        )
+        if not overlaps_columns:
+            return False
+
+        row_distance = second_range.min_row - first_range.max_row
         return 0 < row_distance <= 2
 
     @staticmethod

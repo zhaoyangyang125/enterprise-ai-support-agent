@@ -1,5 +1,9 @@
 # 03 详细设计书 / Detailed Design
 
+## v0.20 修订补充（2026-09-14，Draft）
+
+本补充更新 §6.17 与 DD-062：前置 title/paragraph 必须以“表、下表、本表、以下の表、次の表、下記の表、Table ”等引导语开头。距离使用 cell_range 的物理范围并要求列重叠，不使用排除表头的 rows。单行超过两格也参与闭合检查。附加正文标明上下文自身的 Sheet/Cell Range；结构化 Citation 仍为表格范围。空白边缘、同组相邻表格和装饰边框仍有已知限制。新增4项回归，全量96项通过。
+
 本文档记录 Project 3 在 Phase 4 实现过程中确认的详细设计。
 
 本文档基于原始要件定义、基本设计以及开发过程中的确认结果持续更新。它不能覆盖或擅自修改上位式样；发现冲突时，必须回到原始式样重新确认。
@@ -11,10 +15,10 @@
 | 项目 | 内容 |
 |---|---|
 | 文档名称 | Project 3 详细设计书 |
-| Document Version | v0.19-draft |
+| Document Version | v0.20-draft |
 | Status | Draft（草稿，尚未正式 Review） |
 | Created Date | 2026-08-24 |
-| Last Updated | 2026-09-13 |
+| Last Updated | 2026-09-14 |
 | Prepared By | 项目负责人；Codex 辅助整理 |
 | Reviewed By | Pending（待审阅） |
 | Approved By | Pending（待批准） |
