@@ -1,6 +1,15 @@
 # Phase 4 Progress
 
-Last updated: 2026-09-15
+Last updated: 2026-09-16
+
+## 2026-09-16 演示入口与验收收尾
+
+- 回归结果：后端124 passed、1 skipped、1条原有警告；前端4组通过。
+
+- 新增scripts/image_acceptance_demo.py：正式UI/API配合隔离SQLite、真实Chroma和FakeVision；仅绑定127.0.0.1:8768。
+- 上轮真实浏览器已显示虚构图片及Sheet/Cell引用；浏览器切换用户尚未完成，本轮控制连接不可用，改用真实HTTP回归验证U002无引用且图片403。
+- 原目录SQLite取得写锁后回滚成功，Chroma可打开现有集合，未更改ACL/重建数据库。此前只读错误当前不能复现，历史根因仍未确定。
+- 真实OCR/Vision效果仍未验收。用户新增gemini_test.png和AGENTS.md均不修改、不提交。
 
 ## 隔离图片链路验收
 
