@@ -2,6 +2,16 @@
 
 Last updated: 2026-09-15
 
+## 隔离图片链路验收
+
+- 全量结果：后端123 passed、1 skipped、1条原有警告；前端4组通过。
+
+- 分支test/ocr-vision-image-acceptance，起点adfc01e。
+- 新增tests/integration/test_image_roundtrip.py：HTTP上传虚构Excel、真实图片提取、FakeVision、真实本地Chroma、授权检索、Citation图片API、其他用户拒绝及撤权复查均通过。
+- 原chroma_data不是链接，数据库没有Windows只读属性；临时目录Chroma可初始化并完成读写。原路径只读错误的具体原因尚未确认，未修改原数据库或权限。
+- Windows下Chroma仍持有文件时立即清理临时目录会报文件占用；验收测试保留pytest临时目录至进程退出后处理。
+- 真实浏览器图片展示和真实OCR/Vision效果仍待验收；本次不调用云服务。
+
 ## 2026-09-15 OCR/Vision Phase 8
 
 - 分支feature/ocr-vision-phase8-image-ui；起点0eeba85。
