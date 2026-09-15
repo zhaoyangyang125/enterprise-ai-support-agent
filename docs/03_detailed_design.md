@@ -12,10 +12,18 @@
 
 ## 0. 文档管理 / Document Control
 
+### Phase 7 实现契约（v0.23）
+
+API：GET `/api/documents/{document_id}/versions/{version_id}/assets/{image_id}`。
+调用链：API → ImageAssetService → AuthorizationService → 版本归属检查 → LocalImageAssetStorage。
+每次访问重新检查可读且有效的active版本；拒绝403，授权后归属不符或缺图404，非法编号或缺少身份参数422。
+Citation使用编号生成相对图片URL，不使用模型提供的地址或本地路径。存储检查实际路径归属；响应no-store/nosniff。不公开静态目录。
+现有Mock Header只用于开发；前端必须携带身份Header读取，Phase 8再接入。真实云识别未验收。
+
 | 项目 | 内容 |
 |---|---|
 | 文档名称 | Project 3 详细设计书 |
-| Document Version | v0.22-draft |
+| Document Version | v0.23-draft |
 | Status | Draft（草稿，尚未正式 Review） |
 | Created Date | 2026-08-24 |
 | Last Updated | 2026-09-15 |
@@ -52,6 +60,7 @@
 
 | Version | Date | 变更内容 | 来源/关联 | Status |
 |---|---|---|---|---|
+| v0.23 | 2026-09-15 | 授权图片API和Citation链接 | OCR/Vision Phase 7 | Draft |
 | v0.22 | 2026-09-15 | 上传接入可选图片处理、PDF OCR上下文和单图失败隔离 | OCR/Vision Phase 6 | Draft |
 | v0.20 | 2026-09-14 | 表格边界与临近说明关联修正 | §6.17 | Draft |
 | v0.21 | 2026-09-15 | Vision 接口、Fake、Gemini REST 适配与 ParsedBlock 转换 | OCR/Vision Phase 5 | Draft |

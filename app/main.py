@@ -14,6 +14,7 @@ from app.api.error_handlers import (
 from app.api.leave_balance import router as leave_balance_router
 from app.api.leave_requests import router as leave_requests_router
 from app.api.documents import router as documents_router
+from app.api.image_assets import router as image_assets_router
 from app.db.session import create_schema
 from app.services.errors import LeaveBalanceNotFoundError, LeaveRequestError
 
@@ -33,6 +34,7 @@ app.add_exception_handler(
 )
 app.add_exception_handler(LeaveRequestError, leave_request_error_handler)
 app.include_router(documents_router)
+app.include_router(image_assets_router)
 app.include_router(leave_balance_router)
 app.include_router(leave_requests_router)
 app.include_router(chat_router)

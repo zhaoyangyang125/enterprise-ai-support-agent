@@ -144,6 +144,12 @@ python -m pytest -q
 
 ## Documents
 
+### 图片访问（Phase 7）
+
+Citation的image_url指向`GET /api/documents/{document_id}/versions/{version_id}/assets/{image_id}`。每次请求重新验证有效版本权限；无权限403，授权后归属不符或缺图404，非法编号或缺少身份参数422。响应设置no-store及nosniff；不公开存储目录，不返回本地路径。
+
+调用须携带开发用身份Header（例如X-User-Id），Mock身份不是生产认证。直接点击链接不会自动添加Header；前端预览留待Phase 8。当前122项测试通过，1项真实Gemini测试跳过。
+
 - `docs/03_detailed_design.md`: maintained detailed design and traceability.
 - `docs/development_journal.md`: implementation decisions, verification, and Git milestones.
 - `docs/phase4_progress.md`: current implementation, verification, and Git status.

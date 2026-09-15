@@ -2,6 +2,14 @@
 
 Last updated: 2026-09-15
 
+## 2026-09-15 OCR/Vision Phase 7
+
+- 分支feature/ocr-vision-phase7-image-api；起点38823c4。
+- 完成授权图片API、版本归属校验、路径保护和Citation链接；未修改UI。
+- 全量122 passed、1 skipped、1条原有Starlette警告；覆盖权限拒绝、失效、缺图及引用生成后撤权。
+- 下一步Phase 8前端展示。真实Gemini和OCR效果仍未验收。
+- 仅保存本地提交，不push/merge；未跟踪AGENTS.md不纳入提交。
+
 ## 2026-09-15 OCR/Vision Phase 6
 
 - 分支 feature/ocr-vision-phase6-pipeline；DocumentService已接入统一parse_document入口。

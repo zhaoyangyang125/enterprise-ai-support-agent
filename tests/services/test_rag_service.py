@@ -267,7 +267,7 @@ def test_image_evidence_citation_exposes_safe_metadata_without_url_yet() -> None
         content_type="note",
         modality="image",
         extraction_method="vision",
-        image_id="IMG-HMI-001",
+        image_id="img_" + "a" * 64,
         image_index=2,
         mime_type="image/png",
         confidence=0.91,
@@ -287,6 +287,8 @@ def test_image_evidence_citation_exposes_safe_metadata_without_url_yet() -> None
     citation = result.sources[0]
     assert citation.modality == "image"
     assert citation.extraction_method == "vision"
-    assert citation.image_id == "IMG-HMI-001"
-    assert citation.image_url is None
+    assert citation.image_id == "img_" + "a" * 64
+    assert citation.image_url == (
+        "/api/documents/HMI-MANUAL/versions/HMI-MANUAL-V1/assets/img_" + "a" * 64
+    )
     assert citation.confidence == 0.91

@@ -1,5 +1,9 @@
 # Project 3 Development Journal / 开发日志
 
+## 2026-09-15 Phase 7 图片访问
+
+Phase 7后续记录：新增图片API与ImageAssetService，复用版本授权和本地存储。Citation不返回本地路径，读取图片时重新授权。全量122 passed、1 skipped；真实云调用未执行。Router/对象组装属于半模板，授权和归属校验属于核心逻辑。前端展示待Phase 8。
+
 ## 2026-09-15 Phase 6 上传集成
 
 入口统一到Registry.parse_document，所有结果仍走ParsedBlock和原索引。单图异常在图片循环内部捕获；主文档解析失败仍上抛。测试发现必须按遇到的图片数量推进序号，否则第一Sheet失败会改变下一Sheet图片ID，因此新增跨Sheet存储失败回归。最终113 passed、1 skipped。默认关闭外部识别；Phase7再增加权限图片访问。

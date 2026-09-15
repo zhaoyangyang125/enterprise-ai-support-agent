@@ -1,4 +1,5 @@
 from typing import Protocol
+from urllib.parse import quote
 
 from app.auth.context import CurrentUser
 from app.repositories.vector_repository import VectorRepository
@@ -109,7 +110,7 @@ class RagService:
                 modality=chunk.modality,
                 extraction_method=chunk.extraction_method,
                 image_id=chunk.image_id,
-                image_url=None,
+                image_url=RagService._build_image_url(chunk),
                 image_index=chunk.image_index,
                 mime_type=chunk.mime_type,
                 confidence=chunk.confidence,
@@ -134,6 +135,16 @@ class RagService:
                 seen.add(key)
                 citations.append(citation)
         return citations
+
+    @staticmethod
+    def _build_image_url(chunk: RetrievedChunk) -> str | None:
+        """仅用metadata生成同源链接，访问时再次鉴权。 / Builds a same-origin authorized URL."""
+        if chunk.image_id is None:
+            return None
+        document = quote(chunk.document_id, safe="")
+        version = quote(chunk.document_version_id, safe="")
+        image = quote(chunk.image_id, safe="")
+        return f"/api/documents/{document}/versions/{version}/assets/{image}"
 
     @staticmethod
     def _build_location(chunk: RetrievedChunk) -> str:

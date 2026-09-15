@@ -51,6 +51,13 @@ class SqlAlchemyDocumentRepository:
         version.status = status
         self._session.commit()
 
+    def find_version_document_id(self, version_id: str) -> str | None:
+        """查询版本所属文档，用于核对图片来源。 / Finds the owning document."""
+        version = self._session.get(DocumentVersion, version_id)
+        if version is None:
+            return None
+        return version.document_id
+
     def grant_user_read(self, document_id: str, user_id: str) -> None:
         """幂等地授予指定用户对文档的读取权限。 / Idempotently grants a user read access to a document."""
 

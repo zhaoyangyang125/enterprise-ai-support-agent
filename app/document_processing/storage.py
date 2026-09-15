@@ -131,6 +131,9 @@ class LocalImageAssetStorage:
         for suffix in self._MIME_TYPE_SUFFIXES.values():
             candidate = assets_directory / f"{image_id}{suffix}"
             if candidate.is_file():
+                expected_directory = self._root.resolve() / document_id / document_version_id / "assets"
+                if candidate.resolve().parent != expected_directory:
+                    raise ValueError("Image path is outside the expected asset directory")
                 return candidate
         return None
 

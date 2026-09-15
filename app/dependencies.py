@@ -11,6 +11,7 @@ from app.db.session import get_db_session
 from app.document_processing.parsers import DocumentParserRegistry
 from app.document_processing.storage import LocalDocumentStorage, LocalImageAssetStorage
 from app.services.gemini_vision_provider import GeminiVisionProvider
+from app.services.image_asset_service import ImageAssetService
 from app.repositories.document_access_repository import (
     SqlAlchemyDocumentAccessRepository,
 )
@@ -36,6 +37,17 @@ def get_leave_service(
 
     repository = SqlAlchemyLeaveRepository(session)
     return LeaveService(repository)
+
+
+def get_image_asset_service(
+    session: Annotated[Session, Depends(get_db_session)],
+) -> ImageAssetService:
+    """组装复用当前数据库授权的图片服务。 / Builds authorized image service."""
+    access = SqlAlchemyDocumentAccessRepository(session)
+    authorization = AuthorizationService(access)
+    repository = SqlAlchemyDocumentRepository(session)
+    storage = LocalImageAssetStorage(Path("document_storage"))
+    return ImageAssetService(authorization, repository, storage)
 
 
 def get_leave_request_service(
