@@ -1,6 +1,10 @@
 # Project 3 Development Journal / 开发日志
 
-## 2026-09-15 Phase 7 图片访问
+## 2026-09-15 Phase 8 前端图片证据
+
+新增独立image-evidence.js，来源卡片点击后才请求图片。普通img标签不能携带自定义身份Header，所以先fetch，成功后转换Blob URL显示。只接受固定本地API路径且拒绝重定向，避免身份Header发往外部。身份切换销毁旧图片和未完成请求；聊天响应也检查身份代次。4组Node测试与122项后端测试通过，真实浏览器视觉验收待完成。页面结构是半模板；安全请求、身份切换和资源清理是核心逻辑。
+
+### Phase 7 历史记录
 
 Phase 7后续记录：新增图片API与ImageAssetService，复用版本授权和本地存储。Citation不返回本地路径，读取图片时重新授权。全量122 passed、1 skipped；真实云调用未执行。Router/对象组装属于半模板，授权和归属校验属于核心逻辑。前端展示待Phase 8。
 

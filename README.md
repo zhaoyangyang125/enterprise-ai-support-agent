@@ -144,6 +144,12 @@ python -m pytest -q
 
 ## Documents
 
+### 图片证据前端（Phase 8）
+
+带image_url的来源卡片新增“查看图片”。点击后携带身份Header请求图片，不会自动调用Vision模型。重新加载会重新授权；切换身份清除旧聊天和图片。已下载内容无法靠撤权追回，生产系统仍需要真正的认证。
+
+前端测试：`node --test tests/image_evidence.test.cjs`（4组通过）；后端122项通过、1项跳过。真实浏览器视觉与云识别效果仍待验收。
+
 ### 图片访问（Phase 7）
 
 Citation的image_url指向`GET /api/documents/{document_id}/versions/{version_id}/assets/{image_id}`。每次请求重新验证有效版本权限；无权限403，授权后归属不符或缺图404，非法编号或缺少身份参数422。响应设置no-store及nosniff；不公开存储目录，不返回本地路径。

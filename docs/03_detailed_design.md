@@ -23,7 +23,7 @@ Citation使用编号生成相对图片URL，不使用模型提供的地址或本
 | 项目 | 内容 |
 |---|---|
 | 文档名称 | Project 3 详细设计书 |
-| Document Version | v0.23-draft |
+| Document Version | v0.24-draft |
 | Status | Draft（草稿，尚未正式 Review） |
 | Created Date | 2026-08-24 |
 | Last Updated | 2026-09-15 |
@@ -60,6 +60,7 @@ Citation使用编号生成相对图片URL，不使用模型提供的地址或本
 
 | Version | Date | 变更内容 | 来源/关联 | Status |
 |---|---|---|---|---|
+| v0.24 | 2026-09-15 | 前端按需加载授权图片、失败提示与身份切换清理 | OCR/Vision Phase 8 | Draft |
 | v0.23 | 2026-09-15 | 授权图片API和Citation链接 | OCR/Vision Phase 7 | Draft |
 | v0.22 | 2026-09-15 | 上传接入可选图片处理、PDF OCR上下文和单图失败隔离 | OCR/Vision Phase 6 | Draft |
 | v0.20 | 2026-09-14 | 表格边界与临近说明关联修正 | §6.17 | Draft |

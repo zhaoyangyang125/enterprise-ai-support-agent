@@ -8,6 +8,22 @@ const uploadFeedback = document.querySelector("#upload-feedback");
 const fileInput = document.querySelector("#document-file");
 const fileLabel = document.querySelector("#file-label");
 const statusList = document.querySelector("#document-status-list");
+const imageDisposers = [];
+let identityGeneration = 0;
+
+// 切换身份时释放图片并清除旧用户结果。 / Clears previous identity results.
+for (const selector of ["#user-id", "#department-id", "#role-ids"]) {
+  document.querySelector(selector).addEventListener("input", () => {
+    identityGeneration += 1;
+    for (const dispose of imageDisposers) dispose();
+    imageDisposers.length = 0;
+    chatFeed.replaceChildren();
+    statusList.replaceChildren();
+  });
+}
+window.addEventListener("pagehide", () => {
+  for (const dispose of imageDisposers) dispose();
+});
 
 function authenticationHeaders() {
   const headers = {
@@ -65,6 +81,8 @@ function addSources(messageElement, sources) {
     const detail = [source.content_type, source.section].filter(Boolean).join(" · ");
     card.append(line);
     if (detail) card.append(createElement("div", "source-meta", detail));
+    const dispose = attachImageEvidence(card, source, authenticationHeaders);
+    if (dispose) imageDisposers.push(dispose);
     list.append(card);
   }
   messageElement.append(list);
@@ -84,6 +102,7 @@ chatForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   const message = messageInput.value.trim();
   if (!message) return;
+  const requestGeneration = identityGeneration;
 
   addMessage("user", message);
   messageInput.value = "";
@@ -115,11 +134,13 @@ chatForm.addEventListener("submit", async (event) => {
     if (!response.ok) throw new Error(await responseError(response));
 
     const result = await response.json();
+    if (requestGeneration !== identityGeneration) return;
     loading.remove();
     const answer = addMessage("assistant", result.answer);
     addSources(answer, result.sources);
   } catch (error) {
     loading.remove();
+    if (requestGeneration !== identityGeneration) return;
     addMessage("assistant", error.message || "无法完成查询。", { error: true });
   } finally {
     sendButton.disabled = false;
@@ -202,6 +223,7 @@ function renderStatuses(statuses) {
 }
 
 async function loadDocumentStatuses() {
+  const requestGeneration = identityGeneration;
   statusList.replaceChildren(
     createElement("p", "empty-state", "正在读取状态…"),
   );
@@ -210,8 +232,11 @@ async function loadDocumentStatuses() {
       headers: authenticationHeaders(),
     });
     if (!response.ok) throw new Error(await responseError(response));
-    renderStatuses(await response.json());
+    const statuses = await response.json();
+    if (requestGeneration !== identityGeneration) return;
+    renderStatuses(statuses);
   } catch (error) {
+    if (requestGeneration !== identityGeneration) return;
     statusList.replaceChildren(
       createElement(
         "p",

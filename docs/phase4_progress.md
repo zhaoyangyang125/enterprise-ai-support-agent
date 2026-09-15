@@ -2,6 +2,15 @@
 
 Last updated: 2026-09-15
 
+## 2026-09-15 OCR/Vision Phase 8
+
+- 分支feature/ocr-vision-phase8-image-ui；起点0eeba85。
+- 来源卡片按需查看图片；fetch携带当前身份，禁止外部URL与重定向；Blob预览不泄露本地路径。
+- 403/404/网络/非图片响应显示提示；重新加载重新授权。身份切换清理旧结果、取消图片请求并释放Blob URL。
+- 前端4组Node测试通过；后端122 passed、1 skipped，保留1条原有警告。未进行真实浏览器视觉验收、真实Gemini/OCR效果验收。
+- 修改static页面/脚本/样式、前端测试及文档。下一步：浏览器端到端验收，使用虚构资料验证图片显示与权限拒绝，再评估真实识别效果。
+- 无push/merge；AGENTS.md不纳入提交。浏览器已接收的图片无法通过后端撤权追回；重新请求会检查权限。
+
 ## 2026-09-15 OCR/Vision Phase 7
 
 - 分支feature/ocr-vision-phase7-image-api；起点38823c4。
