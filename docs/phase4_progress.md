@@ -1,6 +1,14 @@
 # Phase 4 Progress
 
-Last updated: 2026-09-14
+Last updated: 2026-09-15
+
+## 2026-09-15 OCR/Vision Phase 5
+
+- 分支 feature/ocr-vision-phase5-vision；起点 8e4f03e。
+- 新增 VisionProvider、FakeVisionProvider、VisionContext/Description/Result 及 VisionBlockService。
+- Gemini REST 适配支持超时、配置缺失、安全失败和结构化输出校验。
+- 定向12 passed；全量108 passed、1 skipped、1条原有第三方警告。跳过项为真实云调用，未上传真实文档。
+- 未接入默认上传；下一步 Phase 6 组装文档解析、图片策略与单图失败隔离。
 
 ## 2026-09-14 Excel 边界修正
 
@@ -8,7 +16,7 @@ Last updated: 2026-09-14
 
 ## Current Scope
 
-Excel 闭合边框表格识别与临近上下文关联已完成并通过验证；OCR / Vision Phase 4 已保持完成状态，尚未进入 Phase 5。
+OCR / Vision Phase 5 已实现并通过离线测试，等待 Phase 6 接入上传流程。Excel 表格功能保持现状。
 
 ## 2026-09-13 Excel 表格识别改进
 

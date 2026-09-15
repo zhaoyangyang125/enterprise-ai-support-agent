@@ -15,10 +15,10 @@
 | 项目 | 内容 |
 |---|---|
 | 文档名称 | Project 3 详细设计书 |
-| Document Version | v0.20-draft |
+| Document Version | v0.21-draft |
 | Status | Draft（草稿，尚未正式 Review） |
 | Created Date | 2026-08-24 |
-| Last Updated | 2026-09-14 |
+| Last Updated | 2026-09-15 |
 | Prepared By | 项目负责人；Codex 辅助整理 |
 | Reviewed By | Pending（待审阅） |
 | Approved By | Pending（待批准） |
@@ -52,6 +52,8 @@
 
 | Version | Date | 变更内容 | 来源/关联 | Status |
 |---|---|---|---|---|
+| v0.20 | 2026-09-14 | 表格边界与临近说明关联修正 | §6.17 | Draft |
+| v0.21 | 2026-09-15 | Vision 接口、Fake、Gemini REST 适配与 ParsedBlock 转换 | OCR/Vision Phase 5 | Draft |
 | v0.1 | 2026-08-24 | 创建技术基线、第一条纵向切片、API 契约、调用链和授权边界 | `REQ-F-005`、`REQ-F-016` | Draft |
 | v0.2 | 2026-08-24 | 将 `LeaveBalance` 调整为 `balance_id` 主键、`user_id` 外键加 UNIQUE；确定 `unit` 不持久化 | Phase 4 Decision | Draft |
 | v0.3 | 2026-08-26 | 合并上位式样来源、文档管理、决定记录、Repository 边界和 Traceability；明确动态状态由进度文档维护 | 文档治理调整 | Draft |
@@ -997,6 +999,22 @@ Phase 4 相关定向测试 14 项通过；全项目 87 项通过，保留 1 条�
 ---
 
 ## 7. 设计决定记录 / Decision Log
+
+### Phase 5 补充契约（v0.21）
+
+- `VisionContext` 为调用方上下文，包括 source_name、sheet、page、section、nearby_text、cell_range；位置不取自模型输出。
+- `VisionDescription` 为校验后的模型内容，包括 summary、image_type、extracted_text、confidence。
+- `VisionResult` 包含 success、provider_name、model_name、description、error_message。description 是内部 Provider 输出，不是另一套 Chunk 或 Evidence。
+- `VisionProvider.analyze(image_path, context)` 可由 FakeVisionProvider 或 GeminiVisionProvider 实现。
+- `VisionBlockService.parse(asset, context)` 把成功结果转成既有 ParsedBlock：table 图片映射 table，其余映射 paragraph；modality=image，extraction_method=vision。失败或空摘要返回 None。
+- Gemini 通过 HTTPX 调用官方 generateContent REST 接口，使用 JSON Schema 校验输出；模型名和密钥显式传入，无默认联网和模型选择。
+- 缺少配置仍可创建对象，调用返回 vision_not_configured。支持 PNG/JPEG/WebP，单图读取限制10 MiB，默认请求超时30秒，不自动重试。
+- 超时、HTTP错误、拦截、截断及非法输出使用安全错误分类，不把服务器响应或密钥放入错误信息。置信度是模型自报值，不是实测准确率。
+- 图片定位及内部路径来自 StoredImageAsset 与 VisionContext；沿用既有元数据隔离规则。
+- 当前阶段未接入默认上传，不修改 HashEmbedding 或 EvidenceOnlyAnswerGenerator。Provider 意外异常的文档级隔离、统计及策略在 Phase 6 完成。
+- 官方接口依据：https://ai.google.dev/api/generate-content
+
+真实验证默认跳过。显式设置 RUN_GEMINI_VISION_LIVE=1、GEMINI_API_KEY 和 GEMINI_VISION_MODEL 后，可运行 tests/integration/test_gemini_vision_live.py；测试仅上传生成的虚构图片，但会调用外部服务并可能计费。当前仅完成模拟HTTP验证，未宣称真实Gemini识别质量已验收。
 
 | Decision ID | 决定 | 来源 | Status |
 |---|---|---|---|
