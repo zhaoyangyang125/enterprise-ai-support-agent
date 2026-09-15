@@ -2,6 +2,17 @@
 
 Last updated: 2026-09-16
 
+## 2026-09-16 真实Provider接入
+
+- 分支feature/real-ocr-vision-providers，起点46d9111，仅处理Provider/配置/测试/文档。
+- Gemini默认gemini-3.5-flash，支持环境覆盖。手写responseJsonSchema替代Pydantic完整Schema，本地VisionDescription校验保留。HTTP错误按状态区分并输出脱敏Google message。
+- GoogleCloudVisionOcrProvider延迟使用官方ADC客户端，document_text_detection，30秒超时且无自动重试；失败返回现有OcrResult，不破坏单页隔离。
+- DOCUMENT_OCR_MODE=off/google控制PDF；DOCUMENT_IMAGE_MODE=off/vision/ocr控制Excel图片；Fake仅测试注入。未知模式警告关闭。全无内容仍failed。
+- 回归146 passed、2 skipped、1条原有Starlette警告；前端4组通过。包含真实两页PDF渲染加模拟Google客户端的单页失败回归。
+- 当前执行测试的Python虚拟环境缺google-cloud-vision；已增加.[ocr]可选依赖，未读凭据、未调用云端。用户需在实际运行环境安装并显式执行live测试。
+- 旧错误丢失HTTP状态和正文，无法确认Schema是唯一根因。新实现真实Gemini/Google效果尚未在本轮验证。
+- AGENTS.md、gemini_test.png保持原状，不纳入提交。无push/merge。
+
 ## 2026-09-16 演示入口与验收收尾
 
 - 回归结果：后端124 passed、1 skipped、1条原有警告；前端4组通过。

@@ -6,7 +6,7 @@
 
 开启后，上传会把提取出的图片发送给Gemini，可能产生费用；请使用虚构或已获准的资料。已有索引不会自动更新，需要上传新版本。图片不足32像素宽/高会跳过，单图失败记录警告，其余可用内容仍正常索引；整份文档无可用内容则失败。图片引用URL和网页原图展示尚待Phase7/8。
 
-PDF扫描页OCR支持依赖注入，真实OCR厂商尚未配置，单独开启Vision不会自动识别扫描PDF。默认测试不调用云端；当前全量113项通过、1项真实调用测试跳过。
+PDF扫描页OCR现在可通过 `DOCUMENT_OCR_MODE=google` 接入Google Cloud Vision；单独开启Gemini Vision不会识别扫描PDF。默认测试不调用云端，两个live测试均需显式开启。详见下方真实Provider配置。
 
 Enterprise AI Support Agent is a Python/FastAPI project that demonstrates secure business-data access, authorized RAG, Agent Tool Calling, and safe business workflows.
 
@@ -143,6 +143,44 @@ python -m pytest -q
 - Safe-write tests include forced transaction rollback and an end-to-end idempotent retry.
 
 ## Documents
+
+### 真实OCR / Vision配置（2026-09-16）
+
+仅配置环境变量，不把真实密钥放入代码或此文档。默认关闭云识别；`FakeOcrProvider/FakeVisionProvider`只在测试或隔离演示中显式注入，生产配置不会自动回退为Fake。
+
+```powershell
+python -m pip install -e '.[test,ocr]'
+# GEMINI_API_KEY 请在当前终端安全设置；不要粘贴到聊天或Git。
+$env:GEMINI_VISION_MODEL = 'gemini-3.5-flash'
+$env:DOCUMENT_IMAGE_MODE = 'vision'
+# 以下是占位路径，请替换为仓库外自己的凭据路径。
+$env:GOOGLE_APPLICATION_CREDENTIALS = 'C:\secure\service-account.json'
+$env:DOCUMENT_OCR_MODE = 'google'
+```
+
+- Gemini：必须配置GEMINI_API_KEY；模型默认gemini-3.5-flash，可用GEMINI_VISION_MODEL覆盖。
+- OCR：安装可选ocr依赖，官方SDK通过ADC加载凭据。本地使用GOOGLE_APPLICATION_CREDENTIALS；程序不手动读取JSON。Google Cloud项目必须启用Vision API和Billing。
+- DOCUMENT_OCR_MODE=google只启用PDF文字不足页的OCR。Excel图片使用DOCUMENT_IMAGE_MODE=vision；若只想提取Excel图片文字，设置DOCUMENT_IMAGE_MODE=ocr并同时开启Google OCR。
+- off为默认；未知模式记录警告并关闭对应功能。缺密钥、SDK或ADC时返回安全失败分类，保留其他可解析内容；全部无有效内容仍将文档标记failed，不假装成功。
+- 单次OCR请求30秒超时，禁用SDK自动重试；confidence暂为null，不捏造准确率。
+- Gemini发送手写简化responseJsonSchema，输出仍由VisionDescription校验。400/403/404/429分别返回vision_http_对应状态；日志保留状态和脱敏Google message，不记录请求图像、密钥或凭据。
+- Service Account JSON不得提交Git，建议始终放仓库外；.gitignore覆盖常见凭据文件名但不能识别所有任意命名的JSON。不要开启SDK/HTTP底层调试日志共享凭据。
+
+显式live测试（可能产生费用，仅上传测试生成的虚构图片）：
+
+```powershell
+$env:RUN_GEMINI_VISION_LIVE = '1'
+python -m pytest tests/integration/test_gemini_vision_live.py -q
+Remove-Item Env:RUN_GEMINI_VISION_LIVE
+
+$env:RUN_GOOGLE_OCR_LIVE = '1'
+python -m pytest tests/integration/test_google_ocr_live.py -q
+Remove-Item Env:RUN_GOOGLE_OCR_LIVE
+```
+
+回归测试前确保两个RUN开关未设置或为0。API Key/模型/SDK在不同虚拟环境或终端里不一定相同。首次live失败请查看安全错误码和脱敏日志，不分享密钥或JSON。原失败仅有vision_http_error，无法据此确认Schema是唯一根因；本次未宣称真实云验证成功。
+
+官方依据：[Gemini请求与Schema](https://ai.google.dev/api/generate-content)、[Google文档OCR](https://cloud.google.com/vision/docs/handwriting)。
 
 ### 不需要API Key的隔离图片演示
 

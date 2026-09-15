@@ -9,3 +9,12 @@ dist/
 *.egg-info/
 chroma_data/
 document_storage/
+.env
+.env.*
+!.env.example
+credentials/
+secrets/
+*credential*.json
+*service-account*.json
+*service_account*.json
+*-key.json

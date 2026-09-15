@@ -14,9 +14,9 @@ from app.services.vision_service import VisionContext
 def test_live_gemini_with_fictional_image(tmp_path):
     """人工启用后测试真实API，可能产生费用。 / Explicitly enabled paid API check."""
     api_key = os.getenv("GEMINI_API_KEY")
-    model = os.getenv("GEMINI_VISION_MODEL")
-    if not api_key or not model:
-        pytest.skip("Set GEMINI_API_KEY and GEMINI_VISION_MODEL")
+    model = os.getenv("GEMINI_VISION_MODEL", "gemini-3.5-flash")
+    if not api_key:
+        pytest.fail("Set GEMINI_API_KEY before enabling the live test")
     path = tmp_path / "fictional.png"
     image = Image.new("RGB", (400, 150), "white")
     drawing = ImageDraw.Draw(image)

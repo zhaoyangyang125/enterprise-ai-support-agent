@@ -1,12 +1,28 @@
 """使用 Gemini REST 接口理解图片。 / Gemini REST vision adapter."""
 
 import base64
+import logging
+import os
 import re
 from pathlib import Path
 
 import httpx
 
 from app.services.vision_service import VisionContext, VisionDescription, VisionResult
+
+_LOGGER = logging.getLogger(__name__)
+DEFAULT_VISION_MODEL = "gemini-3.5-flash"
+
+
+def response_schema() -> dict:
+    """只发送简单的厂商Schema，本地仍严格校验。 / Builds a minimal wire schema."""
+    return {"type": "object", "properties": {
+        "summary": {"type": "string"},
+        "image_type": {"type": "string", "enum": ["screenshot", "flowchart",
+            "architecture_diagram", "table", "chart", "photo", "unknown"]},
+        "extracted_text": {"type": "string"},
+        "confidence": {"type": ["number", "null"], "minimum": 0, "maximum": 1},
+    }, "required": ["summary", "image_type", "extracted_text", "confidence"]}
 
 
 class GeminiVisionProvider:
@@ -21,12 +37,13 @@ class GeminiVisionProvider:
         if timeout_seconds <= 0:
             raise ValueError("timeout_seconds must be positive")
         self._api_key = api_key
-        self._model_name = model_name
+        self._model_name = model_name or os.getenv("GEMINI_VISION_MODEL") or DEFAULT_VISION_MODEL
         self._timeout = timeout_seconds
         self._transport = transport
 
     def _failure(self, message: str) -> VisionResult:
         """仅返回安全错误分类，不暴露密钥或响应正文。 / Returns safe failure categories."""
+        _LOGGER.warning("gemini_vision_failure code=%s", message)
         return VisionResult(success=False, provider_name="gemini",
                             model_name=self._model_name, error_message=message)
 
@@ -65,7 +82,7 @@ class GeminiVisionProvider:
                 ]}],
                 "generationConfig": {
                     "responseMimeType": "application/json",
-                    "responseJsonSchema": VisionDescription.model_json_schema(),
+                    "responseJsonSchema": response_schema(),
                     "maxOutputTokens": 2048,
                 },
             }
@@ -96,6 +113,28 @@ class GeminiVisionProvider:
                                 model_name=self._model_name, description=description)
         except httpx.TimeoutException:
             return self._failure("vision_timeout")
+        except httpx.HTTPStatusError as error:
+            status = error.response.status_code
+            # 只记录Google的message，不记录请求、header或任意嵌套body。
+            message = "unavailable"
+            try:
+                error_body = error.response.json().get("error", {})
+                message = str(error_body.get("message", "unavailable"))
+            except (ValueError, AttributeError):
+                pass
+            if self._api_key:
+                message = message.replace(self._api_key, "[REDACTED]")
+            sensitive_markers = ("private_key", "credential", "client_email", "authorization", "bearer ")
+            for marker in sensitive_markers:
+                if marker in message.lower():
+                    message = "[REDACTED credential-bearing error message]"
+                    break
+            message = re.sub(r"-----BEGIN.*?-----END[^-]*-----", "[REDACTED]", message, flags=re.S)
+            message = re.sub(r"(?i)(api[_-]?key|token|authorization|credential|private_key)\s*[:=]\s*\S+", "[REDACTED]", message)
+            message = re.sub(r"AIza[\w-]+", "[REDACTED]", message)
+            message = message.replace("\r", " ").replace("\n", " ")[:1000]
+            _LOGGER.warning("gemini_http_error status=%s message=%s", status, message)
+            return self._failure("vision_http_" + str(status))
         except httpx.HTTPError:
             return self._failure("vision_http_error")
         except OSError:

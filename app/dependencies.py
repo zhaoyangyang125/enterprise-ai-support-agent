@@ -2,6 +2,7 @@ from typing import Annotated
 from functools import lru_cache
 from pathlib import Path
 import os
+import logging
 
 from fastapi import Depends
 from sqlalchemy.orm import Session
@@ -11,6 +12,7 @@ from app.db.session import get_db_session
 from app.document_processing.parsers import DocumentParserRegistry
 from app.document_processing.storage import LocalDocumentStorage, LocalImageAssetStorage
 from app.services.gemini_vision_provider import GeminiVisionProvider
+from app.services.google_cloud_vision_ocr_provider import GoogleCloudVisionOcrProvider
 from app.services.image_asset_service import ImageAssetService
 from app.repositories.document_access_repository import (
     SqlAlchemyDocumentAccessRepository,
@@ -97,6 +99,30 @@ def get_rag_service(
     )
 
 
+def build_document_parser_registry() -> DocumentParserRegistry:
+    """按开关组装真实Provider；无效模式警告并关闭。 / Builds explicitly enabled providers."""
+    image_mode = os.getenv("DOCUMENT_IMAGE_MODE", "off").strip().lower()
+    ocr_mode = os.getenv("DOCUMENT_OCR_MODE", "off").strip().lower()
+    if image_mode not in ("off", "vision", "ocr"):
+        logging.getLogger(__name__).warning("invalid_document_image_mode: disabled")
+        image_mode = "off"
+    if ocr_mode not in ("off", "google"):
+        logging.getLogger(__name__).warning("invalid_document_ocr_mode: disabled")
+        ocr_mode = "off"
+    ocr = None
+    vision = None
+    if ocr_mode == "google":
+        ocr = GoogleCloudVisionOcrProvider()
+    if image_mode == "ocr" and ocr is None:
+        logging.getLogger(__name__).warning("image_ocr_requires_google_mode: disabled")
+        image_mode = "off"
+    if image_mode == "vision":
+        vision = GeminiVisionProvider(api_key=os.getenv("GEMINI_API_KEY"))
+    return DocumentParserRegistry(
+        image_storage=LocalImageAssetStorage(Path("document_storage")),
+        vision_provider=vision, ocr_provider=ocr, image_mode=image_mode)
+
+
 def get_document_service(
     session: Annotated[Session, Depends(get_db_session)],
     vector_repository: Annotated[
@@ -106,16 +132,7 @@ def get_document_service(
 ) -> DocumentService:
     """组装文档上传、解析、存储和索引所需的 Service。 / Builds the service required for document upload, parsing, storage, and indexing."""
 
-    registry = DocumentParserRegistry()
-    if os.getenv("DOCUMENT_IMAGE_MODE", "off") == "vision":
-        provider = GeminiVisionProvider(
-            api_key=os.getenv("GEMINI_API_KEY"),
-            model_name=os.getenv("GEMINI_VISION_MODEL"),
-        )
-        registry = DocumentParserRegistry(
-            image_storage=LocalImageAssetStorage(Path("document_storage")),
-            vision_provider=provider, image_mode="vision",
-        )
+    registry = build_document_parser_registry()
     return DocumentService(
         repository=SqlAlchemyDocumentRepository(session),
         storage=LocalDocumentStorage(Path("document_storage")),
