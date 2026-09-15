@@ -57,19 +57,20 @@ class DocumentService:
                 document_version_id,
                 file_name=original_name,
             )
-            parser = self._parser_registry.get(stored_path)
-            blocks = parser.parse(stored_path)
+            blocks = self._parser_registry.parse_document(
+                stored_path, document_id, document_version_id, original_name,
+            )
             if not blocks:
                 raise ValueError("The document did not contain indexable content")
-            chunks = [
-                self._to_chunk(
+            chunks = []
+            for block in blocks:
+                chunk = self._to_chunk(
                     block,
                     original_name,
                     document_id,
                     document_version_id,
                 )
-                for block in blocks
-            ]
+                chunks.append(chunk)
             self._vector_index.upsert_chunks(chunks)
             if grant_read_to_user_id is not None:
                 self._repository.grant_user_read(

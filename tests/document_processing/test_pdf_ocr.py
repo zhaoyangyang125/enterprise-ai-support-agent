@@ -25,6 +25,27 @@ class FakePdfPage:
         return self._text
 
 
+def test_ocr_exception_preserves_other_pdf_pages(monkeypatch, tmp_path):
+    """单页识别异常不丢失其他页。 / A failed OCR page preserves other pages."""
+    class MixedReader:
+        def __init__(self, path):
+            self.pages = [FakePdfPage(""), FakePdfPage("这是足够长的正常原生文字页面，应该保留且不执行图片识别。")]
+
+    class BrokenOcr:
+        def extract_text(self, path):
+            raise RuntimeError("PRIVATE")
+
+    monkeypatch.setattr("app.document_processing.pdf_parser.PdfReader", MixedReader)
+    parser = PdfDocumentParser(ocr_provider=BrokenOcr(),
+        page_renderer=FakePdfPageRenderer(),
+        image_storage=LocalImageAssetStorage(tmp_path / "assets"))
+    blocks = parser.parse(tmp_path / "mixed.pdf", "DOC", "VER")
+    assert blocks
+    for block in blocks:
+        assert block.page == 2
+        assert "PRIVATE" not in block.content
+
+
 class FakePdfReader:
     """模拟只包含一页的 pypdf Reader。 / Simulates a one-page pypdf reader."""
 

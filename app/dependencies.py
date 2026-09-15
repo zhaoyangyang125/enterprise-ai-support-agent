@@ -1,6 +1,7 @@
 from typing import Annotated
 from functools import lru_cache
 from pathlib import Path
+import os
 
 from fastapi import Depends
 from sqlalchemy.orm import Session
@@ -8,7 +9,8 @@ from sqlalchemy.orm import Session
 from app.agent.router import AgentRouter
 from app.db.session import get_db_session
 from app.document_processing.parsers import DocumentParserRegistry
-from app.document_processing.storage import LocalDocumentStorage
+from app.document_processing.storage import LocalDocumentStorage, LocalImageAssetStorage
+from app.services.gemini_vision_provider import GeminiVisionProvider
 from app.repositories.document_access_repository import (
     SqlAlchemyDocumentAccessRepository,
 )
@@ -92,10 +94,20 @@ def get_document_service(
 ) -> DocumentService:
     """组装文档上传、解析、存储和索引所需的 Service。 / Builds the service required for document upload, parsing, storage, and indexing."""
 
+    registry = DocumentParserRegistry()
+    if os.getenv("DOCUMENT_IMAGE_MODE", "off") == "vision":
+        provider = GeminiVisionProvider(
+            api_key=os.getenv("GEMINI_API_KEY"),
+            model_name=os.getenv("GEMINI_VISION_MODEL"),
+        )
+        registry = DocumentParserRegistry(
+            image_storage=LocalImageAssetStorage(Path("document_storage")),
+            vision_provider=provider, image_mode="vision",
+        )
     return DocumentService(
         repository=SqlAlchemyDocumentRepository(session),
         storage=LocalDocumentStorage(Path("document_storage")),
-        parser_registry=DocumentParserRegistry(),
+        parser_registry=registry,
         vector_index=vector_repository,
     )
 

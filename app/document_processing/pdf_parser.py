@@ -147,12 +147,17 @@ class PdfDocumentParser:
         if document_id is None or document_version_id is None:
             raise ValueError("document_id and document_version_id are required for OCR")
 
-        return self._read_page_with_ocr(
-            path,
-            page_index,
-            document_id,
-            document_version_id,
-        )
+        try:
+            return self._read_page_with_ocr(
+                path, page_index, document_id, document_version_id,
+            )
+        except Exception:
+            _LOGGER.warning("pdf_ocr_failed version=%s page=%s",
+                            document_version_id, page_index + 1)
+            return _PdfPageContent(
+                lines=self._extract_lines(native_text),
+                modality="text", extraction_method="text_layer",
+            )
 
     def _should_use_ocr(self, native_text: str) -> bool:
         """只在已配置 OCR 且原生文字明显不足时返回 True。 / Returns True only when OCR is configured and native text is clearly insufficient."""

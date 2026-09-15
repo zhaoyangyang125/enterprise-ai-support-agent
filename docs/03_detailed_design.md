@@ -15,7 +15,7 @@
 | 项目 | 内容 |
 |---|---|
 | 文档名称 | Project 3 详细设计书 |
-| Document Version | v0.21-draft |
+| Document Version | v0.22-draft |
 | Status | Draft（草稿，尚未正式 Review） |
 | Created Date | 2026-08-24 |
 | Last Updated | 2026-09-15 |
@@ -52,6 +52,7 @@
 
 | Version | Date | 变更内容 | 来源/关联 | Status |
 |---|---|---|---|---|
+| v0.22 | 2026-09-15 | 上传接入可选图片处理、PDF OCR上下文和单图失败隔离 | OCR/Vision Phase 6 | Draft |
 | v0.20 | 2026-09-14 | 表格边界与临近说明关联修正 | §6.17 | Draft |
 | v0.21 | 2026-09-15 | Vision 接口、Fake、Gemini REST 适配与 ParsedBlock 转换 | OCR/Vision Phase 5 | Draft |
 | v0.1 | 2026-08-24 | 创建技术基线、第一条纵向切片、API 契约、调用链和授权边界 | `REQ-F-005`、`REQ-F-016` | Draft |
@@ -999,6 +1000,16 @@ Phase 4 相关定向测试 14 项通过；全项目 87 项通过，保留 1 条�
 ---
 
 ## 7. 设计决定记录 / Decision Log
+
+### Phase 6 补充契约（v0.22）
+
+DocumentService 使用 Registry.parse_document(path, document_id, version_id, source_name)，原生与图片结果共同进入原有 _to_chunk 和 VectorIndex。主文档解析和索引错误仍使版本 failed；单张识别失败只跳过，最终没有任何可用块仍为 failed。
+
+Excel 图片模式显式为 off/vision/ocr，不做自动语义分类，也不双重调用。小于32像素宽或高的图片跳过；此规则会遗漏小型有意义图片，是已知限制。Excel日志记录 total_images、skipped_images、ocr_images、vision_images、failed_images。Extractor 单图保存失败仍保留全Workbook序号，锚点异常退化为无位置。
+
+PDF 配置 OcrProvider 后复用现有 fallback，并传入文档与版本ID；渲染/存储/OCR异常隔离到单页，保留可用原生文字。PDF当前只有逐页警告，尚未统一上述Excel统计。真实OCR厂商尚未配置，生产工厂只支持默认off或显式Vision；测试及自定义组装可注入OCR。
+
+应用工厂读取 DOCUMENT_IMAGE_MODE=vision、GEMINI_API_KEY、GEMINI_VISION_MODEL 才组装Vision。默认off。启用会向Gemini发送提取出的图片，当前只接受PNG/JPEG/WebP，其他格式识别失败会跳过。没有进行真实云调用验收；图片API和前端展示留到Phase7/8。图片整页空间关系及复杂Office对象仍不支持。
 
 ### Phase 5 补充契约（v0.21）
 

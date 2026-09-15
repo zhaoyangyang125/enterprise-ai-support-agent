@@ -1,6 +1,7 @@
 """从 Excel 中提取 openpyxl 能读取的嵌入图片。 / Extracts embedded Excel images readable by openpyxl."""
 
 from pathlib import Path
+import logging
 from typing import Any
 
 from openpyxl import load_workbook
@@ -39,6 +40,8 @@ class ExcelImageExtractor:
         """接收 Phase 2 提供的图片资产存储。 / Receives the image asset storage provided by Phase 2."""
 
         self._image_storage = image_storage
+        self.total_images = 0
+        self.failed_images = 0
 
     def extract(
         self,
@@ -52,6 +55,8 @@ class ExcelImageExtractor:
         # 输出：按 Workbook/Sheet 顺序排列的已保存图片信息。
         # 步骤：打开 Workbook -> 遍历 Sheet -> 读取图片 -> 保存 -> 记录来源。
         workbook = load_workbook(path, data_only=True)
+        self.total_images = 0
+        self.failed_images = 0
         extracted_images: list[ExtractedExcelImage] = []
         next_image_index = 1
 
@@ -64,7 +69,7 @@ class ExcelImageExtractor:
                     next_image_index,
                 )
                 extracted_images.extend(sheet_images)
-                next_image_index += len(sheet_images)
+                next_image_index = self.total_images + 1
         finally:
             workbook.close()
 
@@ -84,21 +89,33 @@ class ExcelImageExtractor:
         # openpyxl 3.1 没有公开的 Worksheet 图片迭代接口。
         # `_images` 是其读取普通嵌入图片时实际维护的集合；SmartArt、Shape、Chart 不在这里。
         embedded_images = getattr(worksheet, "_images", [])
+        self.total_images += len(embedded_images)
 
         for offset in range(len(embedded_images)):
             embedded_image = embedded_images[offset]
             image_index = first_image_index + offset
-            image_content = embedded_image._data()
-            mime_type = self._get_output_mime_type(embedded_image)
-
-            stored_asset = self._image_storage.store(
-                content=image_content,
-                document_id=document_id,
-                document_version_id=document_version_id,
-                image_index=image_index,
-                mime_type=mime_type,
-            )
-            cell_range = self._get_anchor_cell_range(embedded_image)
+            try:
+                image_content = embedded_image._data()
+                mime_type = self._get_output_mime_type(embedded_image)
+                stored_asset = self._image_storage.store(
+                    content=image_content,
+                    document_id=document_id,
+                    document_version_id=document_version_id,
+                    image_index=image_index,
+                    mime_type=mime_type,
+                )
+            except Exception:
+                self.failed_images += 1
+                logging.getLogger(__name__).warning(
+                    "image_extraction_failed version=%s image=%s",
+                    document_version_id, image_index,
+                )
+                continue
+            try:
+                cell_range = self._get_anchor_cell_range(embedded_image)
+            except Exception:
+                # 锚点不可靠时保留图片，但不伪造位置。
+                cell_range = None
             extracted_image = ExtractedExcelImage(
                 image_id=stored_asset.image_id,
                 image_path=stored_asset.path,

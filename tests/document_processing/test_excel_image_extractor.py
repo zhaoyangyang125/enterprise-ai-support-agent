@@ -30,6 +30,27 @@ def create_excel_with_images(workbook_path: Path, image_path: Path) -> None:
     workbook.close()
 
 
+def test_failed_image_storage_preserves_later_sheet_index(tmp_path, monkeypatch):
+    """第一张失败后，下一Sheet图片仍保持序号2。 / Failure preserves global image indices."""
+    path = tmp_path / "source.xlsx"
+    create_excel_with_images(path, tmp_path / "image.png")
+    storage = LocalImageAssetStorage(tmp_path / "assets")
+    original_store = storage.store
+
+    def fail_first(**kwargs):
+        if kwargs["image_index"] == 1:
+            raise OSError("failure")
+        return original_store(**kwargs)
+
+    monkeypatch.setattr(storage, "store", fail_first)
+    extractor = ExcelImageExtractor(storage)
+    images = extractor.extract(path, "DOC", "VER")
+    assert len(images) == 1
+    assert images[0].image_index == 2
+    assert extractor.total_images == 2
+    assert extractor.failed_images == 1
+
+
 def test_excel_image_extractor_saves_images_with_source_metadata(
     tmp_path: Path,
 ) -> None:

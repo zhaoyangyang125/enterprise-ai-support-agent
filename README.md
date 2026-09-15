@@ -1,5 +1,13 @@
 # Enterprise AI Support Agent
 
+## 可选图片理解（Phase 6）
+
+默认只解析原生文字。需要Excel图片理解时，在启动服务的终端设置 `DOCUMENT_IMAGE_MODE=vision`、`GEMINI_API_KEY` 和 `GEMINI_VISION_MODEL`，然后重新启动。密钥不要写入代码或提交到Git。模型名使用你的Gemini账户可用且支持图片和结构化输出的模型。
+
+开启后，上传会把提取出的图片发送给Gemini，可能产生费用；请使用虚构或已获准的资料。已有索引不会自动更新，需要上传新版本。图片不足32像素宽/高会跳过，单图失败记录警告，其余可用内容仍正常索引；整份文档无可用内容则失败。图片引用URL和网页原图展示尚待Phase7/8。
+
+PDF扫描页OCR支持依赖注入，真实OCR厂商尚未配置，单独开启Vision不会自动识别扫描PDF。默认测试不调用云端；当前全量113项通过、1项真实调用测试跳过。
+
 Enterprise AI Support Agent is a Python/FastAPI project that demonstrates secure business-data access, authorized RAG, Agent Tool Calling, and safe business workflows.
 
 这是一个使用 Python/FastAPI 开发的企业 AI 支持系统练习项目，包含受控业务数据访问、权限过滤 RAG、Agent Tool Calling、安全写入流程和复杂文档解析。

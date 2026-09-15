@@ -1,5 +1,9 @@
 # Project 3 Development Journal / 开发日志
 
+## 2026-09-15 Phase 6 上传集成
+
+入口统一到Registry.parse_document，所有结果仍走ParsedBlock和原索引。单图异常在图片循环内部捕获；主文档解析失败仍上抛。测试发现必须按遇到的图片数量推进序号，否则第一Sheet失败会改变下一Sheet图片ID，因此新增跨Sheet存储失败回归。最终113 passed、1 skipped。默认关闭外部识别；Phase7再增加权限图片访问。
+
 ## 2026-09-15 Vision Phase 5
 
 图片资产和调用方上下文传给 VisionProvider；模型只输出内容描述，经校验后回到 ParsedBlock。表格截图映射 table，其他图片映射 paragraph，保持现有结构类型。Gemini 使用 REST 与 HTTPX，测试以 MockTransport 验证请求和失败，不依赖网络。缺配置不影响启动。定向12项与全量108项通过，真实调用1项默认跳过。尚未验证实际云端识别效果；下一阶段接入上传并隔离单图失败。

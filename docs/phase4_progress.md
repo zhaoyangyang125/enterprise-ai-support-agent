@@ -2,6 +2,15 @@
 
 Last updated: 2026-09-15
 
+## 2026-09-15 OCR/Vision Phase 6
+
+- 分支 feature/ocr-vision-phase6-pipeline；DocumentService已接入统一parse_document入口。
+- Excel可选off/vision/ocr；单图失败后其他内容正常索引，记录Excel图片统计。
+- PDF可注入OCR并传递文档版本；异常隔离到单页。真实OCR仍待选择。
+- 实际Excel混合内容、单张Vision失败、OCR模式、默认关闭、跨Sheet失败序号和PDF单页异常已验证。
+- 全量113 passed、1 skipped、1条原有警告。真实Gemini测试默认跳过。
+- 下一步Phase7：按文档权限提供图片访问API与图片Citation URL。
+
 ## 2026-09-15 OCR/Vision Phase 5
 
 - 分支 feature/ocr-vision-phase5-vision；起点 8e4f03e。
@@ -16,7 +25,7 @@ Last updated: 2026-09-15
 
 ## Current Scope
 
-OCR / Vision Phase 5 已实现并通过离线测试，等待 Phase 6 接入上传流程。Excel 表格功能保持现状。
+OCR / Vision Phase 6 已接入上传并通过离线测试，等待 Phase 7 实现授权图片访问。真实 OCR 和真实 Gemini 效果尚未验收。
 
 ## 2026-09-13 Excel 表格识别改进
 
