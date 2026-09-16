@@ -4,7 +4,7 @@
 
 默认只解析原生文字。需要Excel图片理解时，在启动服务的终端设置 `DOCUMENT_IMAGE_MODE=vision`、`GEMINI_API_KEY` 和 `GEMINI_VISION_MODEL`，然后重新启动。密钥不要写入代码或提交到Git。模型名使用你的Gemini账户可用且支持图片和结构化输出的模型。
 
-开启后，上传会把提取出的图片发送给Gemini，可能产生费用；请使用虚构或已获准的资料。已有索引不会自动更新，需要上传新版本。图片不足32像素宽/高会跳过，单图失败记录警告，其余可用内容仍正常索引；整份文档无可用内容则失败。图片引用URL和网页原图展示尚待Phase7/8。
+开启后，上传会把提取出的图片发送给Gemini，可能产生费用；请使用虚构或已获准的资料。已有索引不会自动更新，需要上传新版本。图片不足32像素宽/高会跳过，单图失败记录警告，其余可用内容仍正常索引；整份文档无可用内容则失败。图片 Citation URL、受权限保护的图片 API、前端原图展示以及身份切换清理均已实现并完成真实浏览器验收。
 
 PDF扫描页OCR现在可通过 `DOCUMENT_OCR_MODE=google` 接入Google Cloud Vision；单独开启Gemini Vision不会识别扫描PDF。默认测试不调用云端，两个live测试均需显式开启。详见下方真实Provider配置。
 
@@ -84,7 +84,7 @@ Open Swagger UI at `http://127.0.0.1:8000/docs`, call `GET /api/me/leave-balance
 - 查询年假余额或公司文档。
 - 按内容类型或 Excel Sheet 缩小检索范围。
 - 以 ADMIN 身份上传不超过 10 MB 的 PDF/XLSX。
-- 查看文档版本状态和结构化 Citation。
+- 查看文档版本状态、结构化 Citation 和受权限保护的原始图片。
 
 上传测试时可使用 `X-Role-Ids: EMPLOYEE,ADMIN`。当前认证仍是本地 Mock，不能作为生产登录方案。
 
@@ -178,7 +178,7 @@ python -m pytest tests/integration/test_google_ocr_live.py -q
 Remove-Item Env:RUN_GOOGLE_OCR_LIVE
 ```
 
-回归测试前确保两个RUN开关未设置或为0。API Key/模型/SDK在不同虚拟环境或终端里不一定相同。首次live失败请查看安全错误码和脱敏日志，不分享密钥或JSON。原失败仅有vision_http_error，无法据此确认Schema是唯一根因；本次未宣称真实云验证成功。
+回归测试前确保两个RUN开关未设置或为0。API Key/模型/SDK在不同虚拟环境或终端里不一定相同。首次 live 失败请查看安全错误码和脱敏日志，不分享密钥或 JSON。旧实现只返回 `vision_http_error`，因此无法反推旧故障的唯一根因；2026-09-16 使用简化 Schema 后，Gemini Vision 和 Google OCR 的真实云调用均已验收通过。
 
 官方依据：[Gemini请求与Schema](https://ai.google.dev/api/generate-content)、[Google文档OCR](https://cloud.google.com/vision/docs/handwriting)。
 
@@ -196,13 +196,34 @@ Remove-Item Env:RUN_GOOGLE_OCR_LIVE
 
 带image_url的来源卡片新增“查看图片”。点击后携带身份Header请求图片，不会自动调用Vision模型。重新加载会重新授权；切换身份清除旧聊天和图片。已下载内容无法靠撤权追回，生产系统仍需要真正的认证。
 
-前端测试：`node --test tests/image_evidence.test.cjs`（4组通过）；后端122项通过、1项跳过。真实浏览器视觉与云识别效果仍待验收。
+前端测试：`node --test tests/image_evidence.test.cjs`（4 passed、0 failed）；后端离线回归为 146 passed、2 skipped。真实浏览器中的图片展示、身份切换清理、无权限检索隔离和旧图片 URL 403 均已验收通过。
 
 ### 图片访问（Phase 7）
 
 Citation的image_url指向`GET /api/documents/{document_id}/versions/{version_id}/assets/{image_id}`。每次请求重新验证有效版本权限；无权限403，授权后归属不符或缺图404，非法编号或缺少身份参数422。响应设置no-store及nosniff；不公开存储目录，不返回本地路径。
 
-调用须携带开发用身份Header（例如X-User-Id），Mock身份不是生产认证。直接点击链接不会自动添加Header；前端预览留待Phase 8。当前122项测试通过，1项真实Gemini测试跳过。
+调用须携带开发用身份 Header（例如 `X-User-Id`），Mock 身份不是生产认证。Phase 8 前端会通过 `fetch` 携带当前身份 Header，再以 Blob URL 展示图片；切换身份会清除旧聊天、Citation 和图片。真实验收已确认无权限用户无法检索证据，并且请求旧图片 URL 返回 403。
+
+### 最终真实环境验收（2026-09-16）
+
+所有验收文件和图片均为完全虚构数据，没有使用真实公司的式样书、图片或机密信息。
+
+- 自动测试：Backend 146 passed、2 skipped；Frontend 4 passed、0 failed。
+- 真实云调用：Gemini Vision live 1 passed（`gemini-3.5-flash`）；Google Cloud Vision document OCR live 1 passed。
+- Excel：使用合法 ID 上传后状态为 active；两张图片均成功提取，一张遇到 Gemini 503 high demand 并被单图片故障隔离，另一张产生 Vision image Chunk。Chroma 中该版本共 7 条（6 text、1 image）。查询现代跨海桥梁成功命中 `Sheet1 / C67:N88`，页面成功显示原图。
+- Excel 权限：切换为 `U999 / D-OTHER / EMPLOYEE` 后，旧聊天、Citation 和图片被清除；再次查询无证据；使用旧图片 URL 请求返回 403。
+- 扫描 PDF：虚构 2 页 PDF 上传后状态为 active，产生 2 个 OCR image Chunk。查询安全代码成功命中 `Page 1`，页面成功显示该扫描页。
+- PDF 权限：切换为无权限用户后旧结果被清除，再次查询无证据，旧 Page 1 图片 URL 返回 403。
+- 完整链路已验证：上传 → Gemini Vision / Google OCR → Chroma → Citation → 图片展示 → 身份切换 → 无权限隔离 → 旧 URL 403。
+
+### 当前已知限制
+
+1. **自动 ID 生成不一致**：某些文件名会生成以 `-` 开头的 Document ID / Version ID，但 `LocalImageAssetStorage` 的安全路径规则要求首字符为字母或数字，因而可能出现 `image_extraction_failed`。当前可手工使用如 `TEST-EXCEL-001`、`TEST-EXCEL-001-V1` 的合法 ID；本轮只记录，不修改代码。
+2. **Gemini 临时 503**：真实请求可能因 high demand 返回 503。当前单图片故障隔离会跳过失败图片，其余文字和图片继续处理；没有自动重试。
+3. **Hash Embedding**：当前 deterministic Hash Embedding 用于离线架构、权限和 RAG 链路验证，不是生产级语义 Embedding，可能出现不相关 Citation。
+4. **EvidenceOnly Answer Generator**：当前直接返回最高相关 Evidence Chunk，不会进一步生成精炼答案。例如询问最大速度时可能返回整段 OCR 文本，这不是 OCR 识别失败。
+5. **Windows pytest 临时目录权限**：本机默认目录 `C:\Users\zyy\AppData\Local\Temp\pytest-of-zyy` 和 `.pytest_cache` 出现 WinError 5。使用此前不存在的新目录，例如 `--basetemp=.\.pytest_tmp_run1`，可完成 146 passed、2 skipped；这是当前开发机环境问题，不是业务代码失败。
+6. **Mock 身份**：`X-User-Id`、`X-Department-Id`、`X-Role-Ids` 仍是开发用身份上下文，不是生产认证。浏览器已经取得的图片不能通过后端撤回，但后续请求会重新检查权限。
 
 - `docs/03_detailed_design.md`: maintained detailed design and traceability.
 - `docs/development_journal.md`: implementation decisions, verification, and Git milestones.
