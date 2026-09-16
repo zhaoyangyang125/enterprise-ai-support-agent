@@ -56,13 +56,19 @@ CurrentUser + Query
 -> Business DB permission + active-version lookup
 -> allowed document-version IDs
 -> RagService
--> retrieval-time Vector Repository filter
+-> retrieval-time ACL + metadata filter
+-> Chroma Vector Search + BM25 Keyword Search
+-> Reciprocal Rank Fusion (RRF)
 -> evidence threshold
 -> Answer Generator
 -> metadata-based Source Citation
 ```
 
 The local implementation does not require a paid LLM or embedding API. The runtime uses local persistent Chroma with deterministic Hash Embedding. The Hash implementation is intentionally offline and replaceable; it is not presented as a production-quality semantic model.
+
+查询端现在使用真正的 Hybrid Search：向量检索负责语义相近内容，BM25 负责编号、型号、Sheet 和 Cell Range 等精确字符串，RRF 根据两路排名进行融合和去重。两条检索链都只接收已授权且符合 metadata filter 的 Chunk，融合后还会再次检查安全范围。文档写入流程仍只写入原有 Chroma，不建立第二套文档索引。
+
+固定的 9 题虚构回归集会同时输出 Hit@1、Hit@K、Recall@K 和 MRR。在当前小样本中，Vector-only 的 Hit@1/MRR 为 `0.8571/0.9048`，Hybrid 为 `1.0/1.0`。这只能证明固定回归样本通过，不能当作生产准确率。
 
 ## Local Setup (PowerShell)
 

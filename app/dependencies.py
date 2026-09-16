@@ -21,6 +21,10 @@ from app.repositories.leave_repository import SqlAlchemyLeaveRepository
 from app.repositories.leave_request_repository import SqlAlchemyLeaveRequestRepository
 from app.repositories.document_repository import SqlAlchemyDocumentRepository
 from app.repositories.vector_repository import ChromaVectorRepository
+from app.repositories.hybrid_repository import (
+    ChromaKeywordRepository,
+    HybridVectorRepository,
+)
 from app.services.authorization_service import AuthorizationService
 from app.services.embedding_service import HashEmbeddingProvider
 from app.services.document_service import DocumentService
@@ -80,11 +84,19 @@ def get_vector_repository() -> ChromaVectorRepository:
     )
 
 
+def get_retrieval_repository(
+    vector_repository: Annotated[ChromaVectorRepository, Depends(get_vector_repository)],
+) -> HybridVectorRepository:
+    """组装Vector、BM25和RRF检索，不改变文档写入接口。 / Builds hybrid retrieval."""
+    keyword_repository = ChromaKeywordRepository(vector_repository)
+    return HybridVectorRepository(vector_repository, keyword_repository)
+
+
 def get_rag_service(
     session: Annotated[Session, Depends(get_db_session)],
     vector_repository: Annotated[
-        ChromaVectorRepository,
-        Depends(get_vector_repository),
+        HybridVectorRepository,
+        Depends(get_retrieval_repository),
     ],
 ) -> RagService:
     """组装本地开发用的 Authorized RAG Service。 / Builds the Authorized RAG service for local development."""

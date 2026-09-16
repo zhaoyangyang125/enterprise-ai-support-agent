@@ -65,6 +65,10 @@ class RetrievalEvaluationItem(BaseModel):
     source_hit: bool | None
     no_evidence_correct: bool | None
     retrieval_ms: float
+    hit_at_1: bool | None = None
+    hit_at_k: bool | None = None
+    recall_at_k: float | None = None
+    reciprocal_rank: float | None = None
 
 
 class RetrievalEvaluationReport(BaseModel):
@@ -78,6 +82,19 @@ class RetrievalEvaluationReport(BaseModel):
     no_evidence_accuracy: float | None
     average_retrieval_ms: float
     items: list[RetrievalEvaluationItem]
+    hit_at_1: float | None = None
+    hit_at_k: float | None = None
+    recall_at_k: float | None = None
+    mrr: float | None = None
+
+
+class RetrievalComparisonReport(BaseModel):
+    """并列保存Vector-only和Hybrid评测。 / Stores comparable retrieval reports."""
+
+    model_config = ConfigDict(frozen=True)
+
+    vector: RetrievalEvaluationReport
+    hybrid: RetrievalEvaluationReport
 
 
 def evaluate_retrieval(
@@ -101,7 +118,20 @@ def evaluate_retrieval(
         returned_ids = [chunk.chunk_id for chunk in chunks]
 
         if case.expects_evidence:
-            retrieval_hit = bool(set(returned_ids) & case.expected_chunk_ids)
+            if not case.expected_chunk_ids:
+                raise ValueError(
+                    "Positive evaluation cases must define expected_chunk_ids"
+                )
+            matching_ids = set(returned_ids) & case.expected_chunk_ids
+            retrieval_hit = bool(matching_ids)
+            hit_at_1 = bool(returned_ids and returned_ids[0] in case.expected_chunk_ids)
+            hit_at_k = retrieval_hit
+            recall_at_k = len(matching_ids) / len(case.expected_chunk_ids)
+            reciprocal_rank = 0.0
+            for rank in range(len(returned_ids)):
+                if returned_ids[rank] in case.expected_chunk_ids:
+                    reciprocal_rank = 1.0 / (rank + 1)
+                    break
             source_hit = (
                 None
                 if case.expected_source is None
@@ -110,6 +140,10 @@ def evaluate_retrieval(
             no_evidence_correct = None
         else:
             retrieval_hit = None
+            hit_at_1 = None
+            hit_at_k = None
+            recall_at_k = None
+            reciprocal_rank = None
             source_hit = None
             no_evidence_correct = not chunks
 
@@ -121,6 +155,10 @@ def evaluate_retrieval(
                 source_hit=source_hit,
                 no_evidence_correct=no_evidence_correct,
                 retrieval_ms=round(elapsed_ms, 3),
+                hit_at_1=hit_at_1,
+                hit_at_k=hit_at_k,
+                recall_at_k=recall_at_k,
+                reciprocal_rank=reciprocal_rank,
             )
         )
 
@@ -139,12 +177,36 @@ def evaluate_retrieval(
             else 0.0
         ),
         items=items,
+        hit_at_1=_optional_rate(item.hit_at_1 for item in items),
+        hit_at_k=_optional_rate(item.hit_at_k for item in items),
+        recall_at_k=_optional_average(item.recall_at_k for item in items),
+        mrr=_optional_average(item.reciprocal_rank for item in items),
     )
+
+
+def compare_retrieval(
+    vector_repository: VectorRepository,
+    hybrid_repository: VectorRepository,
+    cases: list[RetrievalEvaluationCase],
+    limit: int = 5,
+) -> RetrievalComparisonReport:
+    """用同一QA Dataset比较两种检索模式。 / Compares two modes on the same dataset."""
+    vector_report = evaluate_retrieval(vector_repository, cases, limit)
+    hybrid_report = evaluate_retrieval(hybrid_repository, cases, limit)
+    return RetrievalComparisonReport(vector=vector_report, hybrid=hybrid_report)
 
 
 def _optional_rate(values: Iterable[bool | None]) -> float | None:
     """忽略不适用项目并计算布尔结果比例。 / Calculates a boolean rate while ignoring non-applicable items."""
 
+    applicable = [value for value in values if value is not None]
+    if not applicable:
+        return None
+    return round(sum(applicable) / len(applicable), 4)
+
+
+def _optional_average(values: Iterable[float | None]) -> float | None:
+    """忽略不适用项目并计算平均值。 / Averages applicable numeric values."""
     applicable = [value for value in values if value is not None]
     if not applicable:
         return None

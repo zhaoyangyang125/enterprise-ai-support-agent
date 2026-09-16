@@ -1,18 +1,33 @@
 from app.evaluation.retrieval import (
     ExpectedSourceLocation,
+    RetrievalComparisonReport,
     RetrievalEvaluationCase,
     RetrievalEvaluationReport,
+    compare_retrieval,
     evaluate_retrieval,
+)
+from app.repositories.hybrid_repository import (
+    HybridVectorRepository,
+    InMemoryKeywordRepository,
 )
 from app.repositories.vector_repository import InMemoryVectorRepository
 from app.schemas.rag import IndexedChunk, RetrievalFilter
 
 
 def run_sample_evaluation() -> RetrievalEvaluationReport:
-    """运行六题虚构 HMI 小型回归评测。 / Runs the six-case fictional HMI regression evaluation."""
+    """运行九题虚构 HMI 小型回归评测。 / Runs the nine-case fictional HMI regression evaluation."""
 
     repository = InMemoryVectorRepository(_sample_chunks())
     return evaluate_retrieval(repository, _sample_cases())
+
+
+def run_sample_comparison() -> RetrievalComparisonReport:
+    """在同一组虚构问题上比较Vector与Hybrid。 / Compares vector and hybrid retrieval."""
+    chunks = _sample_chunks()
+    vector = InMemoryVectorRepository(chunks)
+    keyword = InMemoryKeywordRepository(chunks)
+    hybrid = HybridVectorRepository(vector, keyword)
+    return compare_retrieval(vector, hybrid, _sample_cases())
 
 
 def _sample_chunks() -> list[IndexedChunk]:
@@ -68,6 +83,33 @@ def _sample_chunks() -> list[IndexedChunk]:
             content="管理者専用の秘密設定値。",
             source_name="secret_admin_policy.pdf",
             page=1,
+        ),
+        IndexedChunk(
+            chunk_id="PDF-SAFETY-CODE",
+            document_id="SAFETY-7392",
+            document_version_id="HMI-POLICY-V1",
+            content="TEST SAFETY CODE 7392; Maximum speed: 40 km/h; Model MAPLE-9063",
+            source_name="fictional_ocr_scan_7392.pdf",
+            modality="image",
+            extraction_method="ocr",
+            image_id="img_" + "d" * 64,
+            image_index=1,
+            mime_type="image/png",
+            page=1,
+        ),
+        IndexedChunk(
+            chunk_id="XLSX-BRIDGE-IMAGE",
+            document_id="BRIDGE-SPEC",
+            document_version_id="HMI-SPEC-V1",
+            content="跨越海面的大型现代多跨斜拉桥，山、水面、暖色夕阳。",
+            source_name="fictional_bridge.xlsx",
+            modality="image",
+            extraction_method="vision",
+            image_id="img_" + "e" * 64,
+            image_index=2,
+            mime_type="image/png",
+            sheet="Sheet1",
+            cell_range="C67:N88",
         ),
     ]
 
@@ -145,8 +187,38 @@ def _sample_cases() -> list[RetrievalEvaluationCase]:
                 sheets=frozenset({"存在しないSheet"})
             ),
         ),
+        RetrievalEvaluationCase(
+            case_id="EXACT-CODE-001",
+            query="TEST SAFETY CODE 7392 MAPLE-9063",
+            allowed_document_version_ids=frozenset({"HMI-POLICY-V1"}),
+            expects_evidence=True,
+            expected_chunk_ids=frozenset({"PDF-SAFETY-CODE"}),
+            expected_source=ExpectedSourceLocation(
+                source_name="fictional_ocr_scan_7392.pdf",
+                page=1,
+            ),
+        ),
+        RetrievalEvaluationCase(
+            case_id="IMAGE-LOCATION-001",
+            query="Sheet1 C67:N88",
+            allowed_document_version_ids=frozenset({"HMI-SPEC-V1"}),
+            expects_evidence=True,
+            expected_chunk_ids=frozenset({"XLSX-BRIDGE-IMAGE"}),
+            expected_source=ExpectedSourceLocation(
+                source_name="fictional_bridge.xlsx",
+                sheet="Sheet1",
+                cell_range="C67:N88",
+            ),
+        ),
+        RetrievalEvaluationCase(
+            case_id="IMAGE-SEMANTIC-001",
+            query="哪张图片展示了跨越海面的现代桥梁",
+            allowed_document_version_ids=frozenset({"HMI-SPEC-V1"}),
+            expects_evidence=True,
+            expected_chunk_ids=frozenset({"XLSX-BRIDGE-IMAGE"}),
+        ),
     ]
 
 
 if __name__ == "__main__":
-    print(run_sample_evaluation().model_dump_json(indent=2))
+    print(run_sample_comparison().model_dump_json(indent=2))

@@ -698,3 +698,38 @@ OCR 接口和 PDF fallback 已实现，但默认上传流程尚未组装 OCR，�
 - 规则表格、无边框多行、闭合边框、开放边框、标题/备注关联、紧贴说明关联和既有复杂样本：9 passed。
 - 全项目回归：92 passed。
 - 保留 1 条与本功能无关的第三方 Starlette 弃用警告。
+## 2026-09-16 — Hybrid Search（Vector + BM25 + RRF）
+
+### 为什么增加 Hybrid
+
+向量检索擅长找“意思相近”的内容，但型号、错误码、测试编号、Sheet 名和 Cell Range 需要精确匹配。BM25 正好补足这一点。两者原始分数含义不同，不能直接相加，所以使用 RRF 根据名次融合。
+
+### 当前执行流程
+
+```text
+用户问题
+-> AuthorizationService 取得允许访问的 active document version IDs
+-> HybridVectorRepository
+   -> Chroma Vector Search（相同 ACL/metadata filter）
+   -> Chroma 中读取相同安全范围的 Chunk -> BM25
+-> RRF 按 chunk_id 融合与去重
+-> 再次检查 ACL/metadata
+-> Top-K
+-> RagService 证据阈值
+-> Answer + metadata Citation
+```
+
+### 初学者要记住
+
+- BM25 和 Vector 是两个“候选人排序员”，RRF 是“合并两张排名表”的方法。
+- RRF 不关心两种分数谁大，因为 Vector 分数和 BM25 分数不是同一种单位。
+- 权限不能等融合结束后才做；否则越权文档已经参与排名。融合后的检查只是第二道保险。
+- `RagService` 只使用 Repository 接口，不负责 BM25 公式，因此以后替换检索实现不会改业务流程。
+- Citation 仍来自 Chunk metadata。RRF 只更换 score，不重新生成 page、sheet、cell 或 image 信息。
+
+### 验证与已知限制
+
+- Hybrid 相关 24 项测试通过；正式回归（排除已知缺失 practice 包的旧练习测试）159 passed、2 skipped。
+- 9 题固定小样本中，Vector-only Hit@1 为 0.8571，Hybrid 为 1.0；小样本不能冒充生产准确率。
+- 当前 BM25 每次从授权范围读取 Chunk 并在进程内计算，代码清楚且适合演示；数据量大时需要专门倒排索引。
+- 旧 `test_leave_availability_service.py` 导入不存在的 `practice` 包，是本轮之前就存在的全量收集问题，本轮没有越界修复。
