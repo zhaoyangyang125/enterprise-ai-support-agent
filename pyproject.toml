@@ -7,16 +7,21 @@ name = "enterprise-ai-support-agent"
 version = "0.1.0"
 requires-python = ">=3.12"
 dependencies = [
+    "httpx>=0.27,<1.0",
     "fastapi>=0.115,<1.0",
     "pydantic>=2.9,<3.0",
     "sqlalchemy>=2.0,<3.0",
     "uvicorn[standard]>=0.30,<1.0",
     "chromadb>=1.5,<1.6",
     "openpyxl>=3.1,<4.0",
+    "pillow>=10,<13",
+    "pymupdf>=1.24,<2.0",
     "pypdf>=5.0,<7.0",
+    "python-multipart>=0.0.9,<1.0",
 ]
 
 [project.optional-dependencies]
+ocr = ["google-cloud-vision>=3.7,<4.0"]
 test = [
     "httpx>=0.27,<1.0",
     "pytest>=8.3,<9.0",

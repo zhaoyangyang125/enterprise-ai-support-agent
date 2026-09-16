@@ -1,5 +1,6 @@
 from app.auth.context import CurrentUser
 from app.schemas.chat import ChatResponse
+from app.schemas.rag import RetrievalFilter
 from app.services.rag_service import RagService
 
 
@@ -11,10 +12,15 @@ class SearchDocumentTool:
 
         self._service = service
 
-    def execute(self, query: str, current_user: CurrentUser) -> ChatResponse:
+    def execute(
+        self,
+        query: str,
+        current_user: CurrentUser,
+        metadata_filter: RetrievalFilter | None = None,
+    ) -> ChatResponse:
         """执行授权文档查询并保持证据状态与引用。 / Executes an authorized document query while preserving evidence state and citations."""
 
-        result = self._service.answer(query, current_user)
+        result = self._service.answer(query, current_user, metadata_filter)
         return ChatResponse(
             intent="knowledge_query",
             answer=result.answer,

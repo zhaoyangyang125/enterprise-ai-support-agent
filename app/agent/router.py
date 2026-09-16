@@ -1,5 +1,6 @@
 from app.auth.context import CurrentUser
 from app.schemas.chat import ChatResponse
+from app.schemas.rag import RetrievalFilter
 from app.tools.get_leave_balance_tool import GetLeaveBalanceTool
 from app.tools.search_document_tool import SearchDocumentTool
 
@@ -26,10 +27,19 @@ class AgentRouter:
         self._leave_balance_tool = leave_balance_tool
         self._search_document_tool = search_document_tool
 
-    def route(self, message: str, current_user: CurrentUser) -> ChatResponse:
+    def route(
+        self,
+        message: str,
+        current_user: CurrentUser,
+        metadata_filter: RetrievalFilter | None = None,
+    ) -> ChatResponse:
         """将余额意图路由到业务 Tool，其余只读问题路由到文档检索。 / Routes balance intent to its business tool and other read queries to document search."""
 
         normalized = message.casefold()
         if any(term.casefold() in normalized for term in self._LEAVE_BALANCE_TERMS):
             return self._leave_balance_tool.execute(current_user)
-        return self._search_document_tool.execute(message, current_user)
+        return self._search_document_tool.execute(
+            message,
+            current_user,
+            metadata_filter,
+        )

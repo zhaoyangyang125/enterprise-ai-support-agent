@@ -7,6 +7,7 @@ from app.auth.context import CurrentUser
 from app.dependencies import get_agent_router
 from app.main import app
 from app.schemas.chat import ChatResponse
+from app.schemas.rag import RetrievalFilter
 
 
 class FakeAgentRouter:
@@ -17,12 +18,19 @@ class FakeAgentRouter:
 
         self.received_message: str | None = None
         self.received_user: CurrentUser | None = None
+        self.received_filter: RetrievalFilter | None = None
 
-    def route(self, message: str, current_user: CurrentUser) -> ChatResponse:
+    def route(
+        self,
+        message: str,
+        current_user: CurrentUser,
+        metadata_filter: RetrievalFilter | None = None,
+    ) -> ChatResponse:
         """记录消息和当前用户并返回固定知识回答。 / Records the message and current user and returns a fixed knowledge answer."""
 
         self.received_message = message
         self.received_user = current_user
+        self.received_filter = metadata_filter
         return ChatResponse(
             intent="knowledge_query",
             answer="国内出差住宿费上限为每晚 10,000 日元。",
@@ -60,7 +68,13 @@ def test_chat_passes_authenticated_context_to_agent() -> None:
             "X-Department-Id": "D-SALES",
             "X-Role-Ids": "EMPLOYEE,MANAGER",
         },
-        json={"message": "国内出差住宿费上限是多少？"},
+        json={
+            "message": "国内出差住宿费上限是多少？",
+            "retrieval_filter": {
+                "content_types": ["table"],
+                "sheets": ["出張規定"],
+            },
+        },
     )
 
     assert response.status_code == 200
@@ -70,6 +84,10 @@ def test_chat_passes_authenticated_context_to_agent() -> None:
         user_id="U001",
         department_id="D-SALES",
         role_ids=frozenset({"EMPLOYEE", "MANAGER"}),
+    )
+    assert fake_router.received_filter == RetrievalFilter(
+        content_types=frozenset({"table"}),
+        sheets=frozenset({"出張規定"}),
     )
 
 
@@ -93,3 +111,29 @@ def test_chat_rejects_empty_message() -> None:
     )
 
     assert response.status_code == 422
+
+
+def test_chat_rejects_unknown_content_type_filter() -> None:
+    """验证 API 拒绝不在白名单内的内容类型。 / Verifies the API rejects content types outside the allowlist."""
+
+    fake_router = FakeAgentRouter()
+
+    def override_get_agent_router() -> FakeAgentRouter:
+        """为当前测试提供 Fake Agent Router。 / Provides the fake agent router for this test."""
+
+        return fake_router
+
+    app.dependency_overrides[get_agent_router] = override_get_agent_router
+    client = TestClient(app)
+
+    response = client.post(
+        "/api/chat",
+        headers={"X-User-Id": "U001"},
+        json={
+            "message": "公司规则是什么？",
+            "retrieval_filter": {"content_types": ["unknown_type"]},
+        },
+    )
+
+    assert response.status_code == 422
+    assert fake_router.received_message is None

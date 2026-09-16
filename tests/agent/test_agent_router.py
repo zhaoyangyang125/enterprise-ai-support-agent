@@ -1,6 +1,7 @@
 from app.agent.router import AgentRouter
 from app.auth.context import CurrentUser
 from app.schemas.chat import ChatResponse
+from app.schemas.rag import RetrievalFilter
 
 
 class FakeLeaveBalanceTool:
@@ -10,6 +11,7 @@ class FakeLeaveBalanceTool:
         """初始化 Tool 调用记录。 / Initializes tool-call tracking."""
 
         self.received_user: CurrentUser | None = None
+        self.received_filter: RetrievalFilter | None = None
 
     def execute(self, current_user: CurrentUser) -> ChatResponse:
         """记录当前用户并返回余额意图结果。 / Records the current user and returns a leave-balance intent result."""
@@ -27,11 +29,17 @@ class FakeSearchDocumentTool:
         self.received_query: str | None = None
         self.received_user: CurrentUser | None = None
 
-    def execute(self, query: str, current_user: CurrentUser) -> ChatResponse:
+    def execute(
+        self,
+        query: str,
+        current_user: CurrentUser,
+        metadata_filter: RetrievalFilter | None = None,
+    ) -> ChatResponse:
         """记录查询与当前用户并返回知识查询结果。 / Records the query and current user and returns a knowledge-query result."""
 
         self.received_query = query
         self.received_user = current_user
+        self.received_filter = metadata_filter
         return ChatResponse(
             intent="knowledge_query",
             answer="evidence answer",
@@ -67,4 +75,23 @@ def test_router_selects_document_search_tool() -> None:
     assert result.intent == "knowledge_query"
     assert search_tool.received_query == "国内出差住宿费上限是多少？"
     assert search_tool.received_user == user
+    assert search_tool.received_filter is None
+    assert leave_tool.received_user is None
+
+
+def test_router_passes_metadata_filter_only_to_document_search() -> None:
+    """验证知识查询的 metadata 条件被传给文档 Tool。 / Verifies knowledge-query metadata conditions are passed to the document tool."""
+
+    leave_tool = FakeLeaveBalanceTool()
+    search_tool = FakeSearchDocumentTool()
+    router = AgentRouter(leave_tool, search_tool)
+    metadata_filter = RetrievalFilter(sheets=frozenset({"CAN信号"}))
+
+    router.route(
+        "VehicleSpeedの期待値",
+        CurrentUser(user_id="U001"),
+        metadata_filter,
+    )
+
+    assert search_tool.received_filter == metadata_filter
     assert leave_tool.received_user is None

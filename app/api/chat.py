@@ -19,4 +19,8 @@ def chat(
 ) -> ChatResponse:
     """把认证用户的自然语言请求交给 Agent Router。 / Passes the authenticated user's natural-language request to the agent router."""
 
-    return agent_router.route(request.message, current_user)
+    return agent_router.route(
+        request.message,
+        current_user,
+        request.retrieval_filter,
+    )

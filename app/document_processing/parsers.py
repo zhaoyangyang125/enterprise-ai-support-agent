@@ -1,10 +1,19 @@
 from pathlib import Path
+import logging
 from typing import Protocol
 
-from openpyxl import load_workbook
-from pypdf import PdfReader
+from PIL import Image
 
+from app.document_processing.excel_parser import ExcelDocumentParser
+from app.document_processing.pdf_parser import PdfDocumentParser
 from app.schemas.document import ParsedBlock
+from app.document_processing.excel_image_extractor import ExcelImageExtractor
+from app.document_processing.storage import LocalImageAssetStorage, StoredImageAsset
+from app.document_processing.pdf_renderer import PyMuPdfPageRenderer
+from app.services.ocr_service import OcrProvider
+from app.services.vision_service import VisionBlockService, VisionContext, VisionProvider
+
+_LOGGER = logging.getLogger(__name__)
 
 
 class DocumentParser(Protocol):
@@ -16,104 +25,39 @@ class DocumentParser(Protocol):
         ...
 
 
-class PdfDocumentParser:
-    """按页和自然段解析带文本层的 PDF。 / Parses text-layer PDFs by page and paragraph."""
-
-    def __init__(self, maximum_chunk_characters: int = 1200) -> None:
-        """设置语义段落合并后的最大字符数。 / Sets the maximum size after combining semantic paragraphs."""
-
-        self._maximum_chunk_characters = maximum_chunk_characters
-
-    def parse(self, path: Path) -> list[ParsedBlock]:
-        """保留页码并将连续自然段组合成 Chunk。 / Preserves page numbers and groups consecutive paragraphs into chunks."""
-
-        blocks: list[ParsedBlock] = []
-        for page_number, page in enumerate(PdfReader(path).pages, start=1):
-            text = page.extract_text() or ""
-            paragraphs = [part.strip() for part in text.split("\n\n") if part.strip()]
-            current: list[str] = []
-            current_length = 0
-            for paragraph in paragraphs:
-                if current and current_length + len(paragraph) > self._maximum_chunk_characters:
-                    blocks.append(
-                        ParsedBlock(content="\n\n".join(current), page=page_number)
-                    )
-                    current = []
-                    current_length = 0
-                current.append(paragraph)
-                current_length += len(paragraph)
-            if current:
-                blocks.append(ParsedBlock(content="\n\n".join(current), page=page_number))
-        return blocks
-
-
-class ExcelDocumentParser:
-    """按 Sheet 结构和行关系解析 Excel，而不是固定字符切割。 / Parses Excel by sheet structure and row relationships instead of fixed character slicing."""
-
-    def parse(self, path: Path) -> list[ParsedBlock]:
-        """展开合并单元格，并把每个数据行转换为 Header=Value 语义记录。 / Expands merged cells and converts each data row into a Header=Value semantic record."""
-
-        workbook = load_workbook(path, data_only=True)
-        blocks: list[ParsedBlock] = []
-        for worksheet in workbook.worksheets:
-            self._expand_merged_cells(worksheet)
-            populated_rows = [
-                (row_index, [cell.value for cell in row])
-                for row_index, row in enumerate(worksheet.iter_rows(), start=1)
-                if any(cell.value not in (None, "") for cell in row)
-            ]
-            if not populated_rows:
-                continue
-            header_row_index, header_values = populated_rows[0]
-            headers = [
-                str(value).strip() if value not in (None, "") else f"column_{index}"
-                for index, value in enumerate(header_values, start=1)
-            ]
-            data_rows = populated_rows[1:] or [(header_row_index, header_values)]
-            for row_index, values in data_rows:
-                pairs = [
-                    f"{headers[index]}={value}"
-                    for index, value in enumerate(values)
-                    if value not in (None, "")
-                ]
-                if pairs:
-                    blocks.append(
-                        ParsedBlock(
-                            content="; ".join(pairs),
-                            sheet=worksheet.title,
-                            rows=str(row_index),
-                        )
-                    )
-        workbook.close()
-        return blocks
-
-    @staticmethod
-    def _expand_merged_cells(worksheet: object) -> None:
-        """把合并区域左上角的值复制到区域内所有单元格。 / Copies each merged region's top-left value to every cell in that region."""
-
-        ranges = list(worksheet.merged_cells.ranges)
-        for merged_range in ranges:
-            value = worksheet.cell(merged_range.min_row, merged_range.min_col).value
-            worksheet.unmerge_cells(str(merged_range))
-            for row in worksheet.iter_rows(
-                min_row=merged_range.min_row,
-                max_row=merged_range.max_row,
-                min_col=merged_range.min_col,
-                max_col=merged_range.max_col,
-            ):
-                for cell in row:
-                    cell.value = value
-
-
 class DocumentParserRegistry:
     """根据扩展名选择受支持的本地文档解析器。 / Selects a supported local document parser by file extension."""
 
-    def __init__(self) -> None:
+    def __init__(self, image_storage: LocalImageAssetStorage | None = None,
+                 vision_provider: VisionProvider | None = None,
+                 ocr_provider: OcrProvider | None = None,
+                 image_mode: str = "off") -> None:
         """注册 v1 支持的 PDF 和 Excel 解析器。 / Registers the PDF and Excel parsers supported in v1."""
 
+        if image_mode not in ("off", "vision", "ocr"):
+            raise ValueError("image_mode must be off, vision or ocr")
+        if image_mode != "off" and image_storage is None:
+            raise ValueError("image_storage is required")
+        if image_mode == "vision" and vision_provider is None:
+            raise ValueError("vision_provider is required")
+        if image_mode == "ocr" and ocr_provider is None:
+            raise ValueError("ocr_provider is required")
+        self._image_storage = image_storage
+        self._vision_provider = vision_provider
+        self._ocr_provider = ocr_provider
+        self._image_mode = image_mode
+        pdf_parser = PdfDocumentParser()
+        if ocr_provider is not None:
+            if image_storage is None:
+                raise ValueError("image_storage is required for PDF OCR")
+            pdf_parser = PdfDocumentParser(
+                ocr_provider=ocr_provider, image_storage=image_storage,
+                page_renderer=PyMuPdfPageRenderer(),
+            )
+        self._pdf_parser = pdf_parser
         excel_parser = ExcelDocumentParser()
         self._parsers: dict[str, DocumentParser] = {
-            ".pdf": PdfDocumentParser(),
+            ".pdf": pdf_parser,
             ".xlsx": excel_parser,
             ".xlsm": excel_parser,
         }
@@ -125,3 +69,55 @@ class DocumentParserRegistry:
         if parser is None:
             raise ValueError(f"Unsupported document format: {path.suffix}")
         return parser
+
+    def parse_document(self, path: Path, document_id: str,
+                       document_version_id: str, source_name: str) -> list[ParsedBlock]:
+        """解析主文档再补充图片块；单图失败只记录警告。 / Parses text and optional image evidence."""
+        suffix = path.suffix.casefold()
+        parser = self.get(path)
+        if suffix == ".pdf":
+            return self._pdf_parser.parse(path, document_id, document_version_id)
+        blocks = parser.parse(path)
+        if self._image_mode == "off":
+            return blocks
+        extractor = ExcelImageExtractor(self._image_storage)
+        images = extractor.extract(path, document_id, document_version_id)
+        stats = {"total_images": extractor.total_images,
+                 "skipped_images": 0, "ocr_images": 0, "vision_images": 0,
+                 "failed_images": extractor.failed_images}
+        for image in images:
+            try:
+                with Image.open(image.image_path) as picture:
+                    width, height = picture.size
+                if width < 32 or height < 32:
+                    stats["skipped_images"] += 1
+                    continue
+                context = VisionContext(source_name=source_name, sheet=image.sheet,
+                                        cell_range=image.cell_range)
+                asset = StoredImageAsset(image.image_id, image.image_path,
+                                         image.image_index, image.mime_type)
+                block = None
+                if self._image_mode == "vision":
+                    service = VisionBlockService(self._vision_provider)
+                    block = service.parse(asset, context)
+                else:
+                    result = self._ocr_provider.extract_text(asset.path)
+                    if result.success and result.text.strip():
+                        block = ParsedBlock(content=result.text, modality="image",
+                            extraction_method="ocr", image_id=asset.image_id,
+                            image_path=asset.path, image_index=asset.image_index,
+                            mime_type=asset.mime_type, confidence=result.confidence,
+                            sheet=context.sheet, cell_range=context.cell_range)
+                if block is None:
+                    stats["failed_images"] += 1
+                    _LOGGER.warning("image_recognition_failed version=%s image=%s",
+                                    document_version_id, image.image_index)
+                    continue
+                blocks.append(block)
+                stats[self._image_mode + "_images"] += 1
+            except Exception:
+                stats["failed_images"] += 1
+                _LOGGER.warning("image_processing_failed version=%s image=%s",
+                                document_version_id, image.image_index)
+        _LOGGER.info("image_processing_summary version=%s stats=%s", document_version_id, stats)
+        return blocks

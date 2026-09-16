@@ -3,7 +3,7 @@ import re
 from pathlib import Path
 from typing import Any, Protocol
 
-from app.schemas.rag import IndexedChunk, RetrievedChunk
+from app.schemas.rag import IndexedChunk, RetrievedChunk, RetrievalFilter
 from app.services.embedding_service import EmbeddingProvider
 
 
@@ -15,6 +15,7 @@ class VectorRepository(Protocol):
         query: str,
         allowed_document_version_ids: frozenset[str],
         limit: int,
+        metadata_filter: RetrievalFilter | None = None,
     ) -> list[RetrievedChunk]:
         """只在允许的文档版本内检索相关片段。 / Searches relevant chunks only within allowed document versions."""
 
@@ -43,6 +44,7 @@ class InMemoryVectorRepository:
         query: str,
         allowed_document_version_ids: frozenset[str],
         limit: int,
+        metadata_filter: RetrievalFilter | None = None,
     ) -> list[RetrievedChunk]:
         """先按权限版本过滤，再计算字符 n-gram 相似度。 / Filters by authorized versions before calculating character n-gram similarity."""
 
@@ -50,6 +52,7 @@ class InMemoryVectorRepository:
             chunk
             for chunk in self._chunks
             if chunk.document_version_id in allowed_document_version_ids
+            and self._matches_metadata_filter(chunk, metadata_filter)
         )
         ranked = [
             RetrievedChunk(**chunk.model_dump(), score=self._similarity(query, chunk.content))
@@ -57,6 +60,27 @@ class InMemoryVectorRepository:
         ]
         ranked.sort(key=lambda chunk: chunk.score, reverse=True)
         return ranked[:limit]
+
+    @staticmethod
+    def _matches_metadata_filter(
+        chunk: IndexedChunk,
+        metadata_filter: RetrievalFilter | None,
+    ) -> bool:
+        """在权限过滤之后应用只会缩小结果集的 metadata 条件。 / Applies metadata conditions that only narrow the authorized result set."""
+
+        if metadata_filter is None:
+            return True
+        return all(
+            (
+                not metadata_filter.document_ids
+                or chunk.document_id in metadata_filter.document_ids,
+                not metadata_filter.source_names
+                or chunk.source_name in metadata_filter.source_names,
+                not metadata_filter.content_types
+                or chunk.content_type in metadata_filter.content_types,
+                not metadata_filter.sheets or chunk.sheet in metadata_filter.sheets,
+            )
+        )
 
     @staticmethod
     def _similarity(left: str, right: str) -> float:
@@ -132,6 +156,7 @@ class ChromaVectorRepository:
         query: str,
         allowed_document_version_ids: frozenset[str],
         limit: int,
+        metadata_filter: RetrievalFilter | None = None,
     ) -> list[RetrievedChunk]:
         """在 Chroma query 的 where 条件中应用允许版本集合。 / Applies the allowed version set in the Chroma query where clause."""
 
@@ -140,11 +165,10 @@ class ChromaVectorRepository:
         result = self._collection.query(
             query_embeddings=self._embedding_provider.embed([query]),
             n_results=limit,
-            where={
-                "document_version_id": {
-                    "$in": sorted(allowed_document_version_ids)
-                }
-            },
+            where=self._build_where(
+                allowed_document_version_ids,
+                metadata_filter,
+            ),
             include=["documents", "metadatas", "distances"],
         )
         ids = result["ids"][0]
@@ -169,13 +193,53 @@ class ChromaVectorRepository:
                     content=content,
                     score=max(0.0, min(1.0, 1.0 - float(distance))),
                     source_name=str(metadata["source_name"]),
+                    content_type=self._optional_str(
+                        metadata.get("content_type")
+                    )
+                    or "paragraph",
+                    modality=self._optional_str(metadata.get("modality")) or "text",
+                    extraction_method=self._optional_str(
+                        metadata.get("extraction_method")
+                    ),
+                    image_id=self._optional_str(metadata.get("image_id")),
+                    image_index=self._optional_int(metadata.get("image_index")),
+                    mime_type=self._optional_str(metadata.get("mime_type")),
+                    confidence=self._optional_float(metadata.get("confidence")),
                     page=self._optional_int(metadata.get("page")),
                     section=self._optional_str(metadata.get("section")),
                     sheet=self._optional_str(metadata.get("sheet")),
+                    cell_range=self._optional_str(metadata.get("cell_range")),
                     rows=self._optional_str(metadata.get("rows")),
                 )
             )
         return chunks
+
+    @staticmethod
+    def _build_where(
+        allowed_document_version_ids: frozenset[str],
+        metadata_filter: RetrievalFilter | None,
+    ) -> dict[str, object]:
+        """用 AND 合并强制权限条件与可选 metadata 条件。 / Combines mandatory authorization and optional metadata conditions with AND."""
+
+        conditions: list[dict[str, object]] = [
+            {
+                "document_version_id": {
+                    "$in": sorted(allowed_document_version_ids)
+                }
+            }
+        ]
+        if metadata_filter is not None:
+            for key, values in (
+                ("document_id", metadata_filter.document_ids),
+                ("source_name", metadata_filter.source_names),
+                ("content_type", metadata_filter.content_types),
+                ("sheet", metadata_filter.sheets),
+            ):
+                if values:
+                    conditions.append({key: {"$in": sorted(values)}})
+        if len(conditions) == 1:
+            return conditions[0]
+        return {"$and": conditions}
 
     @staticmethod
     def _to_metadata(chunk: IndexedChunk) -> dict[str, str | int | float | bool]:
@@ -185,8 +249,22 @@ class ChromaVectorRepository:
             "document_id": chunk.document_id,
             "document_version_id": chunk.document_version_id,
             "source_name": chunk.source_name,
+            "content_type": chunk.content_type,
+            "modality": chunk.modality,
         }
-        for key in ("page", "section", "sheet", "rows"):
+        # 这里只允许写入可检索的轻量 metadata，不保存图片二进制、绝对路径或 URL。
+        for key in (
+            "extraction_method",
+            "image_id",
+            "image_index",
+            "mime_type",
+            "confidence",
+            "page",
+            "section",
+            "sheet",
+            "cell_range",
+            "rows",
+        ):
             value = getattr(chunk, key)
             if value is not None:
                 metadata[key] = value
@@ -203,3 +281,9 @@ class ChromaVectorRepository:
         """把可选 page metadata 安全转换为整数。 / Safely converts optional page metadata to an integer."""
 
         return None if value is None else int(value)
+
+    @staticmethod
+    def _optional_float(value: object) -> float | None:
+        """把可选 confidence metadata 安全转换为小数。 / Safely converts optional confidence metadata to a float."""
+
+        return None if value is None else float(value)
