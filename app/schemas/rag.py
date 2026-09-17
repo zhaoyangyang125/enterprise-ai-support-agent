@@ -46,6 +46,9 @@ class RetrievedChunk(IndexedChunk):
     """表示经过权限过滤和相似度排序后的证据片段。 / Represents an authorized evidence chunk ranked by similarity."""
 
     score: float = Field(ge=0.0, le=1.0)
+    vector_score: float | None = Field(default=None, ge=0.0, le=1.0)
+    keyword_score: float | None = Field(default=None, ge=0.0, le=1.0)
+    keyword_match_ratio: float | None = Field(default=None, ge=0.0, le=1.0)
 
 
 class SourceCitation(BaseModel):

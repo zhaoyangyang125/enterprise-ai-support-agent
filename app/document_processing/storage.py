@@ -8,7 +8,11 @@ class LocalDocumentStorage:
     """按文档和版本保存可审计、可重新解析的原文件。 / Stores auditable and re-processable originals by document and version."""
 
     def __init__(self, root: Path | str) -> None:
-        """设置本地原文件存储根目录。 / Sets the local original-document storage root."""
+        """设置本地原文件存储根目录。 / Sets the local original-document storage root.
+
+        参数说明 / Args:
+            root: 保存全部原始文档的根目录，可以传入 Path 或路径字符串。
+        """
 
         self._root = Path(root)
 
@@ -19,7 +23,14 @@ class LocalDocumentStorage:
         document_version_id: str,
         file_name: str | None = None,
     ) -> Path:
-        """复制原文件到稳定的文档版本目录。 / Copies the original file into a stable document-version directory."""
+        """复制原文件到稳定的文档版本目录。 / Copies the original file into a stable document-version directory.
+
+        参数说明 / Args:
+            source_path: 当前待保存文件的本地路径，通常是上传后的临时文件。
+            document_id: 文档编号，用来建立该文档自己的目录。
+            document_version_id: 文档版本编号，用来隔离不同版本的原文件。
+            file_name: 希望保存的原始文件名；未提供时使用 source_path 的文件名。
+        """
 
         target_directory = self._root / document_id / document_version_id
         target_directory.mkdir(parents=True, exist_ok=True)
@@ -39,7 +50,14 @@ class StoredImageAsset:
         image_index: int,
         mime_type: str,
     ) -> None:
-        """保存图片标识、内部路径、序号和媒体类型。 / Stores the image identity, internal path, index, and media type."""
+        """保存图片标识、内部路径、序号和媒体类型。 / Stores the image identity, internal path, index, and media type.
+
+        参数说明 / Args:
+            image_id: 系统生成的稳定图片编号，对外引用图片时使用。
+            path: 图片在服务器内部的实际保存路径，不返回给客户端。
+            image_index: 图片在当前文档中的顺序，从 1 开始。
+            mime_type: 图片媒体类型，例如 image/png。
+        """
 
         self.image_id = image_id
         self.path = path
@@ -61,7 +79,11 @@ class LocalImageAssetStorage:
     _SAFE_IMAGE_ID = re.compile(r"^img_[0-9a-f]{64}$")
 
     def __init__(self, root: Path | str) -> None:
-        """设置与原文存储共用的根目录。 / Sets the root directory shared with original-document storage."""
+        """设置与原文存储共用的根目录。 / Sets the root directory shared with original-document storage.
+
+        参数说明 / Args:
+            root: 文档存储根目录；图片会保存到对应版本下面的 assets 目录。
+        """
 
         self._root = Path(root)
 
@@ -73,7 +95,15 @@ class LocalImageAssetStorage:
         image_index: int,
         mime_type: str,
     ) -> StoredImageAsset:
-        """生成稳定 image_id，并把图片保存到对应文档版本。 / Generates a stable image ID and stores the image under its document version."""
+        """生成稳定 image_id，并把图片保存到对应文档版本。 / Generates a stable image ID and stores the image under its document version.
+
+        参数说明 / Args:
+            content: 图片的原始二进制内容。
+            document_id: 图片所属的文档编号。
+            document_version_id: 图片所属的文档版本编号。
+            image_index: 图片在该文档中的顺序，从 1 开始。
+            mime_type: 图片媒体类型，用于校验并决定安全扩展名。
+        """
 
         # 输入：图片字节、文档标识、版本标识、图片序号和 MIME 类型。
         # 输出：包含稳定 image_id 与服务器内部路径的 StoredImageAsset。
@@ -116,7 +146,13 @@ class LocalImageAssetStorage:
         document_version_id: str,
         image_id: str,
     ) -> Path | None:
-        """使用受控标识查找图片，不接受客户端文件路径。 / Finds an image by controlled identifiers without accepting a client file path."""
+        """使用受控标识查找图片，不接受客户端文件路径。 / Finds an image by controlled identifiers without accepting a client file path.
+
+        参数说明 / Args:
+            document_id: 图片所属文档编号，用来限定查找目录。
+            document_version_id: 图片所属版本编号，用来限定版本目录。
+            image_id: 系统生成的图片编号，用来匹配具体图片文件。
+        """
 
         # 输入：文档 ID、版本 ID 和系统生成的 image_id。
         # 输出：存在时返回内部 Path，不存在时返回 None。
@@ -143,7 +179,13 @@ class LocalImageAssetStorage:
         document_version_id: str,
         image_id: str,
     ) -> bytes:
-        """按 image_id 读取图片字节，不存在时明确失败。 / Reads image bytes by image ID and fails explicitly when missing."""
+        """按 image_id 读取图片字节，不存在时明确失败。 / Reads image bytes by image ID and fails explicitly when missing.
+
+        参数说明 / Args:
+            document_id: 图片所属文档编号。
+            document_version_id: 图片所属版本编号。
+            image_id: 需要读取的系统图片编号。
+        """
 
         image_path = self.find(document_id, document_version_id, image_id)
         if image_path is None:
@@ -156,7 +198,13 @@ class LocalImageAssetStorage:
         document_version_id: str,
         image_id: str,
     ) -> bool:
-        """删除指定图片，并返回是否确实删除了文件。 / Deletes an image and reports whether a file was actually removed."""
+        """删除指定图片，并返回是否确实删除了文件。 / Deletes an image and reports whether a file was actually removed.
+
+        参数说明 / Args:
+            document_id: 图片所属文档编号。
+            document_version_id: 图片所属版本编号。
+            image_id: 需要删除的系统图片编号。
+        """
 
         image_path = self.find(document_id, document_version_id, image_id)
         if image_path is None:
@@ -166,7 +214,11 @@ class LocalImageAssetStorage:
 
     @classmethod
     def _get_suffix(cls, mime_type: str) -> str:
-        """把允许的 MIME 类型转换为安全扩展名。 / Converts an allowed MIME type to a safe file suffix."""
+        """把允许的 MIME 类型转换为安全扩展名。 / Converts an allowed MIME type to a safe file suffix.
+
+        参数说明 / Args:
+            mime_type: 待转换的图片媒体类型，例如 image/jpeg。
+        """
 
         suffix = cls._MIME_TYPE_SUFFIXES.get(mime_type)
         if suffix is None:
@@ -181,7 +233,15 @@ class LocalImageAssetStorage:
         image_index: int,
         mime_type: str,
     ) -> str:
-        """根据图片内容与来源生成可重复计算的稳定标识。 / Creates a repeatable stable ID from image content and source identity."""
+        """根据图片内容与来源生成可重复计算的稳定标识。 / Creates a repeatable stable ID from image content and source identity.
+
+        参数说明 / Args:
+            content: 图片原始字节，内容变化时 ID 也会变化。
+            document_id: 图片所属文档编号，防止不同文档共用同一身份。
+            document_version_id: 图片所属版本编号，区分不同版本。
+            image_index: 图片在文档中的顺序，区分同一版本内的图片。
+            mime_type: 图片媒体类型，也是稳定身份的一部分。
+        """
 
         content_hash = hashlib.sha256(content).hexdigest()
         identity = (
@@ -197,7 +257,12 @@ class LocalImageAssetStorage:
         document_id: str,
         document_version_id: str,
     ) -> Path:
-        """集中生成内部 assets 目录，调用方不需要拼接路径。 / Builds the internal assets directory so callers do not concatenate paths."""
+        """集中生成内部 assets 目录，调用方不需要拼接路径。 / Builds the internal assets directory so callers do not concatenate paths.
+
+        参数说明 / Args:
+            document_id: 用于选择文档目录的文档编号。
+            document_version_id: 用于选择版本目录的版本编号。
+        """
 
         document_directory = self._root / document_id
         version_directory = document_directory / document_version_id
@@ -205,14 +270,23 @@ class LocalImageAssetStorage:
 
     @classmethod
     def _validate_path_segment(cls, value: str, field_name: str) -> None:
-        """拒绝包含目录跳转字符的文档标识。 / Rejects document identifiers containing path traversal characters."""
+        """拒绝包含目录跳转字符的文档标识。 / Rejects document identifiers containing path traversal characters.
+
+        参数说明 / Args:
+            value: 需要检查的实际编号值。
+            field_name: 该值的字段名称，只用于生成容易理解的错误信息。
+        """
 
         if cls._SAFE_PATH_SEGMENT.fullmatch(value) is None:
             raise ValueError(f"Invalid {field_name}")
 
     @classmethod
     def _validate_image_id(cls, image_id: str) -> None:
-        """只允许读取由本组件生成的 image_id。 / Allows only image IDs generated by this component."""
+        """只允许读取由本组件生成的 image_id。 / Allows only image IDs generated by this component.
+
+        参数说明 / Args:
+            image_id: 需要校验格式的图片编号。
+        """
 
         if cls._SAFE_IMAGE_ID.fullmatch(image_id) is None:
             raise ValueError("Invalid image_id")

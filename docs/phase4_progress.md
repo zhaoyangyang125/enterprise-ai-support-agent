@@ -2,6 +2,19 @@
 
 Last updated: 2026-09-16
 
+## 2026-09-16 Hybrid Search
+
+- 当前分支：`feature/hybrid-search`，从 `main` 的 `83d1da5` 创建；未 merge、未 push。
+- 查询端新增 `Chroma Vector Search + BM25 Keyword Search + RRF`，写入端仍使用原有 Chroma Repository。
+- BM25 使用正文及 document ID、文件名、section、Sheet、Cell Range、rows，增强编号和定位字符串召回。
+- 两路均在排名前使用相同的有效版本 ACL 和 metadata filter；融合后再次检查，越权 Chunk 不进入 Top-K。
+- RRF 按 chunk_id 去重，只融合排名；图片、OCR/Vision、Page、Sheet、Cell Range、confidence 等证据 metadata 保持不变。
+- 固定评测从 6 题扩展为 9 题，增加精确代码、图片定位和图片语义问题，并输出 Hit@1、Hit@K、Recall@K、MRR。
+- 小样本结果：Vector-only Hit@1 `0.8571`、MRR `0.9048`；Hybrid Hit@1 `1.0`、MRR `1.0`。这不是生产准确率。
+- Hybrid 定向回归：24 passed。除旧练习测试外正式全量：159 passed、2 skipped，保留 1 条第三方 Starlette 警告。
+- 全量 pytest 仍被既有 `tests/services/test_leave_availability_service.py` 阻挡：它导入当前仓库不存在的 `practice` 包；本轮没有为通过测试而改动该旧练习。
+- `AGENTS.md`、`gemini_test.png` 是项目所有者未跟踪文件，本轮保持不变且不纳入提交。
+
 ## 2026-09-16 真实Provider接入
 
 - 分支feature/real-ocr-vision-providers，起点46d9111，仅处理Provider/配置/测试/文档。

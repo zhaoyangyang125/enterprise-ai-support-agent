@@ -110,6 +110,27 @@ class InMemoryVectorRepository:
         self._chunks = list(by_id.values())
 
 
+def matches_retrieval_scope(
+    chunk: IndexedChunk,
+    allowed_document_version_ids: frozenset[str],
+    metadata_filter: RetrievalFilter | None,
+) -> bool:
+    """防御性检查Chunk同时符合授权范围和metadata条件。 / Checks authorization and metadata scope."""
+    if chunk.document_version_id not in allowed_document_version_ids:
+        return False
+    if metadata_filter is None:
+        return True
+    if metadata_filter.document_ids and chunk.document_id not in metadata_filter.document_ids:
+        return False
+    if metadata_filter.source_names and chunk.source_name not in metadata_filter.source_names:
+        return False
+    if metadata_filter.content_types and chunk.content_type not in metadata_filter.content_types:
+        return False
+    if metadata_filter.sheets and chunk.sheet not in metadata_filter.sheets:
+        return False
+    return True
+
+
 class ChromaVectorRepository:
     """使用本地持久化 Chroma 实现权限过滤的向量索引和检索。 / Uses local persistent Chroma for authorization-filtered vector indexing and retrieval."""
 
@@ -213,6 +234,57 @@ class ChromaVectorRepository:
                 )
             )
         return chunks
+
+    def list_authorized_chunks(
+        self,
+        allowed_document_version_ids: frozenset[str],
+        metadata_filter: RetrievalFilter | None = None,
+    ) -> list[IndexedChunk]:
+        """读取Keyword检索可见的授权Chunk，不执行向量查询。 / Lists authorized chunks for keyword search."""
+        if not allowed_document_version_ids:
+            return []
+        result = self._collection.get(
+            where=self._build_where(allowed_document_version_ids, metadata_filter),
+            include=["documents", "metadatas"],
+        )
+        ids = result.get("ids") or []
+        documents = result.get("documents") or []
+        metadatas = result.get("metadatas") or []
+        chunks: list[IndexedChunk] = []
+        for index in range(len(ids)):
+            content = documents[index]
+            metadata = metadatas[index]
+            if content is None or metadata is None:
+                continue
+            chunk = self._from_stored_values(ids[index], content, metadata)
+            if matches_retrieval_scope(chunk, allowed_document_version_ids, metadata_filter):
+                chunks.append(chunk)
+        return chunks
+
+    @classmethod
+    def _from_stored_values(
+        cls, chunk_id: str, content: str, metadata: dict[str, object]
+    ) -> IndexedChunk:
+        """将Chroma文档和metadata恢复为统一Chunk。 / Restores a stored chunk."""
+        return IndexedChunk(
+            chunk_id=chunk_id,
+            document_id=str(metadata["document_id"]),
+            document_version_id=str(metadata["document_version_id"]),
+            content=content,
+            source_name=str(metadata["source_name"]),
+            content_type=cls._optional_str(metadata.get("content_type")) or "paragraph",
+            modality=cls._optional_str(metadata.get("modality")) or "text",
+            extraction_method=cls._optional_str(metadata.get("extraction_method")),
+            image_id=cls._optional_str(metadata.get("image_id")),
+            image_index=cls._optional_int(metadata.get("image_index")),
+            mime_type=cls._optional_str(metadata.get("mime_type")),
+            confidence=cls._optional_float(metadata.get("confidence")),
+            page=cls._optional_int(metadata.get("page")),
+            section=cls._optional_str(metadata.get("section")),
+            sheet=cls._optional_str(metadata.get("sheet")),
+            cell_range=cls._optional_str(metadata.get("cell_range")),
+            rows=cls._optional_str(metadata.get("rows")),
+        )
 
     @staticmethod
     def _build_where(

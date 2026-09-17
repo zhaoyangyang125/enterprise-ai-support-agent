@@ -23,15 +23,15 @@ Citation使用编号生成相对图片URL，不使用模型提供的地址或本
 | 项目 | 内容 |
 |---|---|
 | 文档名称 | Project 3 详细设计书 |
-| Document Version | v0.25-draft |
+| Document Version | v0.26-draft |
 | Status | Draft（草稿，尚未正式 Review） |
 | Created Date | 2026-08-24 |
-| Last Updated | 2026-09-15 |
+| Last Updated | 2026-09-16 |
 | Prepared By | 项目负责人；Codex 辅助整理 |
 | Reviewed By | Pending（待审阅） |
 | Approved By | Pending（待批准） |
 | Related Phase | Phase 4 Coding |
-| Current Scope | 三条核心主链；Chat Agent/Tool；Document Ingestion、本地 Chroma、复杂文档解析、Excel 边框表格与上下文关联、OCR/Vision Phase 4 PDF OCR fallback |
+| Current Scope | 三条核心主链；Chat Agent/Tool；Document Ingestion、本地 Chroma、复杂文档、OCR/Vision/Image Evidence、Hybrid Search（Vector + BM25 + RRF） |
 | Related Requirements | `REQ-F-001`～`REQ-F-005`、`REQ-F-007`～`REQ-F-016`、`NFR-SEC-001` |
 
 ### 0.1 状态定义
@@ -60,6 +60,7 @@ Citation使用编号生成相对图片URL，不使用模型提供的地址或本
 
 | Version | Date | 变更内容 | 来源/关联 | Status |
 |---|---|---|---|---|
+| v0.26 | 2026-09-16 | 查询端增加 BM25 与 RRF，保持检索前 ACL/metadata 过滤，并增加 Vector/Hybrid 同集评测 | Hybrid Search Implementation + Verification | Draft |
 | v0.25 | 2026-09-16 | 真实Google OCR、简化Gemini Schema与配置和安全诊断 | 用户Provider接入指令 | Draft |
 | v0.24 | 2026-09-15 | 前端按需加载授权图片、失败提示与身份切换清理 | OCR/Vision Phase 8 | Draft |
 | v0.23 | 2026-09-15 | 授权图片API和Citation链接 | OCR/Vision Phase 7 | Draft |
@@ -318,7 +319,10 @@ CurrentUser + Query
 -> DocumentAccessRepository / Business DB
 -> allowed_document_version_ids
 -> RagService
--> VectorRepository.search(query, allowed_document_version_ids)
+-> HybridVectorRepository.search(query, allowed_document_version_ids, filter)
+   -> Chroma Vector Search
+   -> BM25 Keyword Search
+   -> Reciprocal Rank Fusion / deduplication / Top-K
 -> evidence threshold
 -> AnswerGenerator
 -> metadata-based Source Citation
@@ -396,6 +400,33 @@ No Evidence 时：
 | `TC-RAG-CITE-101` | Service Unit | Excel 同一来源多个 Chunk | Citation 去重并显示 Sheet/Cell Range 与最高分数 |
 | `TC-VECTOR-FILTER-101` | Repository Integration | 权限集合 + metadata 条件 | 使用 AND，只返回同时满足两个条件的 Chunk |
 | `TC-EVAL-101` | Evaluation | 4 个有答案问题 + 2 个无答案问题 | 分别计算 Retrieval/Source/No Evidence 指标 |
+| `TC-HYBRID-101` | Repository Unit | Vector 和 BM25 都有结果 | RRF 按 `chunk_id` 去重并融合排名 |
+| `TC-HYBRID-102` | Repository Unit | 任一路或两路无结果 | 保留另一条有效链，或安全返回空集合 |
+| `TC-HYBRID-103` | Repository Unit | 越权版本或不匹配 metadata | BM25 排名前过滤，融合后再次过滤 |
+| `TC-HYBRID-104` | Repository Unit | 图片证据与 PDF/Excel 定位 | 融合只更新 score，不丢失 evidence metadata |
+| `TC-EVAL-102` | Evaluation | 9 个固定虚构问题 | 同集比较 Vector/Hybrid 的 Hit@1、Hit@K、Recall@K、MRR |
+
+### 4.9 Hybrid Search / 混合检索
+
+查询端在 Repository 层组合两条检索链，`RagService` 不直接实现 BM25 或 RRF：
+
+```text
+同一个 query + allowed_document_version_ids + RetrievalFilter
+├─ Chroma Vector Search：处理语义相近表达
+└─ BM25 Keyword Search：处理编号、型号、Sheet、Cell Range 和精确关键词
+                 ↓
+          RRF（只使用排名，不直接相加异构原始分数）
+                 ↓
+      chunk_id 去重 → 防御性权限复查 → Top-K
+```
+
+- BM25 候选来自原有 Chroma 集合，不新增 Elasticsearch、OpenSearch 或第二份业务索引。
+- ACL 与 metadata filter 在两路排名前执行。RRF 后再次检查，属于纵深防御，不能替代前置过滤。
+- RRF 使用 `1 / (k + rank)` 累加两路名次；同一路重复的 `chunk_id` 只计一次。
+- RRF 结果规范化到 `0..1`，使现有 `RetrievedChunk.score`、证据阈值和 Citation Schema 保持兼容。
+- 两路候选数为最终 Top-K 的 4 倍；融合完成后才截取最终 Top-K。
+- 当前 BM25 为易读的本地实现，适合当前项目规模。大规模语料下需要独立倒排索引，属于后续容量设计。
+- 当前固定评测包含语义问题、精确代码、Sheet/Cell 定位、图片语义和无答案安全场景。小样本结果不能代表生产精度。
 
 ### 4.8 Chat / Agent / Tool 接入
 
@@ -1103,6 +1134,10 @@ PDF 配置 OcrProvider 后复用现有 fallback，并传入文档与版本ID；�
 | DD-061 | 键值对规则优先；其余 Excel 候选区域只有边框形成闭合矩形且超过两个单元格时才分类为 table，无闭合边框的多行区域分类为 paragraph | Phase 4 Decision | Confirmed |
 | DD-062 | 同一 Sheet、最多间隔一行空白的前置 title/paragraph 与后置 note 加入表格检索正文，但保留原独立 Block 和真实表格 Cell Range | Phase 4 Decision | Confirmed |
 | DD-063 | Excel 原始结构分类继续使用确定性规则，不使用未经评测的特征评分或 LLM 推断 | Phase 4 Decision | Confirmed |
+| DD-064 | 查询端采用 Chroma Vector + 本地 BM25 + RRF；BM25 复用同一 Chroma Chunk，不增加第二套持久化索引 | Hybrid Search Decision | Confirmed |
+| DD-065 | Vector 与 BM25 必须在排名前应用同一 allowed version 和 metadata filter；融合后再次进行防御性范围检查 | Hybrid Search Security Decision | Confirmed |
+| DD-066 | RRF 按 chunk_id 去重并基于名次融合，不直接相加 Vector/BM25 原始分数；融合分数规范化到 0..1 | Hybrid Search Ranking Decision | Confirmed |
+| DD-067 | 固定评测扩展为 9 题并同集输出 Hit@1、Hit@K、Recall@K、MRR；结果仅作回归基线 | Hybrid Search Evaluation Decision | Confirmed |
 
 ---
 
