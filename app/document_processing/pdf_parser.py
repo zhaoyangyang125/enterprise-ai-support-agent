@@ -32,7 +32,18 @@ class _PdfPageContent:
         mime_type: str | None = None,
         confidence: float | None = None,
     ) -> None:
-        """保存生成 ParsedBlock 时需要的一页数据。 / Stores one page's data required to create ParsedBlocks."""
+        """保存生成 ParsedBlock 时需要的一页数据。 / Stores one page's data required to create ParsedBlocks.
+
+        参数说明 / Args:
+            lines: 当前页面清理后的非空文字行。
+            modality: 证据来源形式，例如 text 或 image。
+            extraction_method: 文字取得方式，例如 text_layer 或 ocr。
+            image_id: OCR 页面对应的系统图片编号；原生文字页为 None。
+            image_path: OCR 页面图片的服务器内部路径。
+            image_index: 图片顺序；PDF 中通常等于从 1 开始的页码。
+            mime_type: OCR 页面图片的媒体类型。
+            confidence: OCR Provider 返回的可选置信度。
+        """
 
         self.lines = lines
         self.modality = modality
@@ -57,7 +68,17 @@ class PdfDocumentParser:
         page_renderer: PdfPageRenderer | None = None,
         image_storage: LocalImageAssetStorage | None = None,
     ) -> None:
-        """设置文字规则，并可选配置扫描页 OCR fallback。 / Configures text rules and optional scanned-page OCR fallback."""
+        """设置文字规则，并可选配置扫描页 OCR fallback。 / Configures text rules and optional scanned-page OCR fallback.
+
+        参数说明 / Args:
+            maximum_chunk_characters: 单个文字 Chunk 允许的最大字符数。
+            margin_candidate_lines: 每页顶部和底部各检查多少行页眉页脚候选。
+            repeated_margin_ratio: 候选文字至少在多少比例页面出现才视为重复页边内容。
+            minimum_native_text_characters: 原生文字少于该字符数时考虑 OCR。
+            ocr_provider: 可选 OCR 服务；未提供时只处理 PDF 原生文字层。
+            page_renderer: OCR 前把 PDF 页面渲染成图片的组件。
+            image_storage: 保存渲染页面图片的内部存储组件。
+        """
 
         if maximum_chunk_characters <= 0:
             raise ValueError("maximum_chunk_characters must be positive")
@@ -89,7 +110,13 @@ class PdfDocumentParser:
         document_id: str | None = None,
         document_version_id: str | None = None,
     ) -> list[ParsedBlock]:
-        """清理重复页边内容，并按页面、标题和段落生成 Block。 / Removes repeated margins and creates blocks by page, heading, and paragraph."""
+        """清理重复页边内容，并按页面、标题和段落生成 Block。 / Removes repeated margins and creates blocks by page, heading, and paragraph.
+
+        参数说明 / Args:
+            path: 需要解析的 PDF 文件路径。
+            document_id: 启用 OCR 时用于保存页面图片的文档编号。
+            document_version_id: 启用 OCR 时用于隔离页面图片的版本编号。
+        """
 
         # 输入：PDF 路径；启用 OCR 时还需要文档 ID 和版本 ID。
         # 输出：文字层或 OCR 生成的统一 ParsedBlock。
@@ -135,7 +162,15 @@ class PdfDocumentParser:
         document_id: str | None,
         document_version_id: str | None,
     ) -> _PdfPageContent:
-        """优先使用足够的文字层，否则执行可选 OCR fallback。 / Prefers sufficient text-layer content and otherwise runs optional OCR fallback."""
+        """优先使用足够的文字层，否则执行可选 OCR fallback。 / Prefers sufficient text-layer content and otherwise runs optional OCR fallback.
+
+        参数说明 / Args:
+            path: 当前 PDF 路径，OCR 时交给页面渲染器。
+            page_index: 当前页的零起点序号；第一页是 0。
+            native_text: pypdf 从当前页直接提取出的原生文字。
+            document_id: OCR 图片所属文档编号。
+            document_version_id: OCR 图片所属版本编号。
+        """
 
         if not self._should_use_ocr(native_text):
             return _PdfPageContent(
@@ -160,7 +195,11 @@ class PdfDocumentParser:
             )
 
     def _should_use_ocr(self, native_text: str) -> bool:
-        """只在已配置 OCR 且原生文字明显不足时返回 True。 / Returns True only when OCR is configured and native text is clearly insufficient."""
+        """只在已配置 OCR 且原生文字明显不足时返回 True。 / Returns True only when OCR is configured and native text is clearly insufficient.
+
+        参数说明 / Args:
+            native_text: 当前 PDF 页原生文字，用于计算去空白后的有效字符数。
+        """
 
         if self._ocr_provider is None:
             return False
@@ -175,7 +214,14 @@ class PdfDocumentParser:
         document_id: str,
         document_version_id: str,
     ) -> _PdfPageContent:
-        """渲染、保存并 OCR 一张文字不足的 PDF 页面。 / Renders, stores, and OCRs one PDF page with insufficient text."""
+        """渲染、保存并 OCR 一张文字不足的 PDF 页面。 / Renders, stores, and OCRs one PDF page with insufficient text.
+
+        参数说明 / Args:
+            path: 当前 PDF 文件路径。
+            page_index: 需要 OCR 的零起点页序号。
+            document_id: 保存渲染图片时使用的文档编号。
+            document_version_id: 保存渲染图片时使用的版本编号。
+        """
 
         if self._page_renderer is None:
             raise RuntimeError("PDF page renderer is not configured")
@@ -227,7 +273,11 @@ class PdfDocumentParser:
 
     @staticmethod
     def _extract_lines(text: str) -> list[str]:
-        """保留非空文本行并清理首尾空白。 / Keeps non-empty text lines and trims surrounding whitespace."""
+        """保留非空文本行并清理首尾空白。 / Keeps non-empty text lines and trims surrounding whitespace.
+
+        参数说明 / Args:
+            text: 原生提取或 OCR 返回的整页文字。
+        """
 
         return [line.strip() for line in text.splitlines() if line.strip()]
 
@@ -235,7 +285,11 @@ class PdfDocumentParser:
         self,
         page_lines: list[list[str]],
     ) -> frozenset[str]:
-        """统计多页顶部和底部重复出现的规范化文本。 / Finds normalized text repeated at page tops or bottoms."""
+        """统计多页顶部和底部重复出现的规范化文本。 / Finds normalized text repeated at page tops or bottoms.
+
+        参数说明 / Args:
+            page_lines: 全部页面的文字行列表；外层代表页面，内层代表该页各行。
+        """
 
         if len(page_lines) < 2:
             return frozenset()
@@ -261,7 +315,12 @@ class PdfDocumentParser:
         lines: list[str],
         repeated_margins: frozenset[str],
     ) -> list[str]:
-        """只从页面顶部和底部候选区域移除重复文本。 / Removes repeated text only from top and bottom candidate regions."""
+        """只从页面顶部和底部候选区域移除重复文本。 / Removes repeated text only from top and bottom candidate regions.
+
+        参数说明 / Args:
+            lines: 当前页面的文字行。
+            repeated_margins: 已统计出的重复页眉页脚规范化文本集合。
+        """
 
         if not repeated_margins:
             return lines
@@ -280,7 +339,11 @@ class PdfDocumentParser:
 
     @staticmethod
     def _normalize_margin(line: str) -> str:
-        """统一空白并隐藏页码数字，使 Page 1/3 与 Page 2/3 可匹配。 / Normalizes whitespace and masks page numbers for matching."""
+        """统一空白并隐藏页码数字，使 Page 1/3 与 Page 2/3 可匹配。 / Normalizes whitespace and masks page numbers for matching.
+
+        参数说明 / Args:
+            line: 一行页眉或页脚候选文字。
+        """
 
         normalized = _SPACE_PATTERN.sub(" ", line).strip().casefold()
         return _NUMBER_PATTERN.sub("#", normalized)
@@ -290,7 +353,12 @@ class PdfDocumentParser:
         page_content: _PdfPageContent,
         page_number: int,
     ) -> list[ParsedBlock]:
-        """将一页内容转换为标题和带 Section 的段落 Block。 / Converts one page into title and section-aware paragraph blocks."""
+        """将一页内容转换为标题和带 Section 的段落 Block。 / Converts one page into title and section-aware paragraph blocks.
+
+        参数说明 / Args:
+            page_content: 当前页面文字以及 OCR/原生文字来源 metadata。
+            page_number: 从 1 开始的真实页码，写入 Citation metadata。
+        """
 
         blocks: list[ParsedBlock] = []
         paragraph_lines: list[str] = []
@@ -335,7 +403,14 @@ class PdfDocumentParser:
         section: str | None,
         page_content: _PdfPageContent,
     ) -> list[ParsedBlock]:
-        """在不跨页的前提下按最大字符数组合段落。 / Groups paragraphs by size without crossing page boundaries."""
+        """在不跨页的前提下按最大字符数组合段落。 / Groups paragraphs by size without crossing page boundaries.
+
+        参数说明 / Args:
+            lines: 当前段落尚未分块的文字行。
+            page_number: 这些文字所属的真实页码。
+            section: 前面最近识别到的章节标题；没有时为 None。
+            page_content: 当前页的提取来源 metadata，用于生成统一 Block。
+        """
 
         blocks: list[ParsedBlock] = []
         current_parts: list[str] = []
@@ -375,7 +450,15 @@ class PdfDocumentParser:
         page_number: int,
         section: str | None,
     ) -> ParsedBlock:
-        """把页面文字和提取来源统一转换成 ParsedBlock。 / Converts page text and extraction-source data into a ParsedBlock."""
+        """把页面文字和提取来源统一转换成 ParsedBlock。 / Converts page text and extraction-source data into a ParsedBlock.
+
+        参数说明 / Args:
+            content: 最终写入 Block 的标题或段落文字。
+            content_type: 内容结构类型，例如 title 或 paragraph。
+            page_content: 提供 modality、OCR 图片编号等来源 metadata。
+            page_number: 该 Block 所在的真实 PDF 页码。
+            section: 该 Block 所属章节标题；没有时为 None。
+        """
 
         return ParsedBlock(
             content=content,
@@ -392,7 +475,11 @@ class PdfDocumentParser:
         )
 
     def _split_long_line(self, line: str) -> list[str]:
-        """确保单个超长文本行也不会突破 Chunk 上限。 / Ensures an individual long line also respects the chunk limit."""
+        """确保单个超长文本行也不会突破 Chunk 上限。 / Ensures an individual long line also respects the chunk limit.
+
+        参数说明 / Args:
+            line: 需要按最大字符数切开的单行文字。
+        """
 
         return [
             line[index : index + self._maximum_chunk_characters]

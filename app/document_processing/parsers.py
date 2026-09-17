@@ -20,7 +20,11 @@ class DocumentParser(Protocol):
     """定义原始文档转换为带定位语义块的接口。 / Defines the interface for converting an original document into located semantic blocks."""
 
     def parse(self, path: Path) -> list[ParsedBlock]:
-        """解析指定本地文档。 / Parses the specified local document."""
+        """解析指定本地文档。 / Parses the specified local document.
+
+        参数说明 / Args:
+            path: 需要解析的本地文件路径；具体实现根据文件内容生成 ParsedBlock。
+        """
 
         ...
 
@@ -32,7 +36,14 @@ class DocumentParserRegistry:
                  vision_provider: VisionProvider | None = None,
                  ocr_provider: OcrProvider | None = None,
                  image_mode: str = "off") -> None:
-        """注册 v1 支持的 PDF 和 Excel 解析器。 / Registers the PDF and Excel parsers supported in v1."""
+        """注册 v1 支持的 PDF 和 Excel 解析器。 / Registers the PDF and Excel parsers supported in v1.
+
+        参数说明 / Args:
+            image_storage: 图片资产存储；启用 OCR/Vision 时用于保存提取出的图片。
+            vision_provider: 图片理解服务；image_mode=vision 时必须提供。
+            ocr_provider: 文字识别服务；PDF OCR 或 image_mode=ocr 时使用。
+            image_mode: Excel 图片处理方式，可选 off、vision 或 ocr。
+        """
 
         if image_mode not in ("off", "vision", "ocr"):
             raise ValueError("image_mode must be off, vision or ocr")
@@ -63,7 +74,11 @@ class DocumentParserRegistry:
         }
 
     def get(self, path: Path) -> DocumentParser:
-        """返回对应解析器，不支持的格式会明确失败。 / Returns the matching parser and explicitly fails for unsupported formats."""
+        """返回对应解析器，不支持的格式会明确失败。 / Returns the matching parser and explicitly fails for unsupported formats.
+
+        参数说明 / Args:
+            path: 待解析文件路径；这里主要读取它的后缀来选择 PDF 或 Excel 解析器。
+        """
 
         parser = self._parsers.get(path.suffix.casefold())
         if parser is None:
@@ -72,7 +87,14 @@ class DocumentParserRegistry:
 
     def parse_document(self, path: Path, document_id: str,
                        document_version_id: str, source_name: str) -> list[ParsedBlock]:
-        """解析主文档再补充图片块；单图失败只记录警告。 / Parses text and optional image evidence."""
+        """解析主文档再补充图片块；单图失败只记录警告。 / Parses text and optional image evidence.
+
+        参数说明 / Args:
+            path: 已保存到服务器的正式文档路径。
+            document_id: 当前文档编号，保存图片资产时用于确定所属目录。
+            document_version_id: 当前版本编号，用于隔离图片、日志和检索版本。
+            source_name: 用户上传时的原始文件名，传给 Vision 上下文作为来源信息。
+        """
         suffix = path.suffix.casefold()
         parser = self.get(path)
         if suffix == ".pdf":

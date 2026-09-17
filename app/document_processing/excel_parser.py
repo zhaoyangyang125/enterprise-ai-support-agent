@@ -39,7 +39,11 @@ class _WorksheetReader:
     """
 
     def __init__(self, worksheet: Worksheet) -> None:
-        """保存工作表，并准备合并单元格的逻辑值。 / Stores a sheet and prepares logical merged-cell values."""
+        """保存工作表，并准备合并单元格的逻辑值。 / Stores a sheet and prepares logical merged-cell values.
+
+        参数说明 / Args:
+            worksheet: 当前需要读取的 openpyxl Sheet 对象。
+        """
 
         self.worksheet = worksheet
         self.merged_ranges = [
@@ -72,7 +76,12 @@ class _WorksheetReader:
         return merged_values
 
     def get_value(self, row_number: int, column_number: int) -> Any:
-        """读取单元格的逻辑值。 / Returns the logical value of a cell."""
+        """读取单元格的逻辑值。 / Returns the logical value of a cell.
+
+        参数说明 / Args:
+            row_number: 目标单元格的 Excel 行号，从 1 开始。
+            column_number: 目标单元格的 Excel 列号，从 1 开始；A 列为 1。
+        """
 
         position = (row_number, column_number)
         if position in self._merged_values:
@@ -88,6 +97,9 @@ class _WorksheetReader:
 
         这里故意不展开合并值。这个方法主要用于判断某一行是不是只有一个
         标题，或者是不是由 Label/Value 组成的键值对。
+
+        参数说明 / Args:
+            row_number: 需要检查的 Excel 行号，从 1 开始。
         """
 
         cells: list[tuple[int, Any]] = []
@@ -107,7 +119,12 @@ class _WorksheetReader:
         row_number: int,
         column_number: int,
     ) -> CellRange | None:
-        """查找从指定单元格开始的合并区域。 / Finds a merged range starting at a cell."""
+        """查找从指定单元格开始的合并区域。 / Finds a merged range starting at a cell.
+
+        参数说明 / Args:
+            row_number: 候选合并区域左上角的行号。
+            column_number: 候选合并区域左上角的列号。
+        """
 
         for merged_range in self.merged_ranges:
             starts_at_requested_cell = (
@@ -120,7 +137,11 @@ class _WorksheetReader:
         return None
 
     def is_empty_row(self, row_number: int) -> bool:
-        """判断一整行是否为空。 / Checks whether an entire row is empty."""
+        """判断一整行是否为空。 / Checks whether an entire row is empty.
+
+        参数说明 / Args:
+            row_number: 需要判断的 Excel 行号。
+        """
 
         for column_number in range(1, self.worksheet.max_column + 1):
             if self.get_value(row_number, column_number) not in _EMPTY_VALUES:
@@ -129,7 +150,11 @@ class _WorksheetReader:
         return True
 
     def find_used_column_bounds(self, rows: list[int]) -> tuple[int, int]:
-        """返回一组行实际使用的最小列和最大列。 / Returns the used column bounds for rows."""
+        """返回一组行实际使用的最小列和最大列。 / Returns the used column bounds for rows.
+
+        参数说明 / Args:
+            rows: 同一个候选区域中的行号列表，例如 [3, 4, 5]。
+        """
 
         used_columns: list[int] = []
 
@@ -146,7 +171,11 @@ class ExcelDocumentParser:
     """将 Excel 的内容区域转换为可定位的 ParsedBlock。 / Converts Excel regions into located ParsedBlocks."""
 
     def parse(self, path: Path) -> list[ParsedBlock]:
-        """打开 Excel，按顺序解析其中的每一个 Sheet。 / Opens an Excel file and parses every sheet."""
+        """打开 Excel，按顺序解析其中的每一个 Sheet。 / Opens an Excel file and parses every sheet.
+
+        参数说明 / Args:
+            path: 需要解析的 Excel 文件路径。
+        """
 
         workbook = load_workbook(path, data_only=True)
 
@@ -164,7 +193,11 @@ class ExcelDocumentParser:
             workbook.close()
 
     def _parse_sheet(self, worksheet: Worksheet) -> list[ParsedBlock]:
-        """从上往下读取一张 Sheet，并按区域生成 Block。 / Reads one sheet from top to bottom and builds blocks."""
+        """从上往下读取一张 Sheet，并按区域生成 Block。 / Reads one sheet from top to bottom and builds blocks.
+
+        参数说明 / Args:
+            worksheet: 当前正在解析的 openpyxl Sheet 对象。
+        """
 
         reader = _WorksheetReader(worksheet)
         blocks: list[ParsedBlock] = []
@@ -238,7 +271,13 @@ class ExcelDocumentParser:
         rows: list[int],  # 待处理的行号，例如 [3, 4, 5, 6]
         current_section: str | None,  # 这些行所属的章节，可能还没有章节
     ) -> list[ParsedBlock]:  # 返回生成的多个内容块
-        """按有无边框的变化拆分连续行，再分别生成内容块。"""
+        """按有无边框的变化拆分连续行，再分别生成内容块。
+
+        参数说明 / Args:
+            reader: 当前 Sheet 的统一读取器，负责普通和合并单元格。
+            rows: 尚未处理的连续普通行号，例如 [3, 4, 5]。
+            current_section: 这些行所属的最近章节标题；尚无章节时为 None。
+        """
 
         # 没有待处理的行，就返回空列表。
         if not rows:
@@ -291,7 +330,12 @@ class ExcelDocumentParser:
         reader: _WorksheetReader,
         row_number: int,
     ) -> bool:
-        """判断一行是否包含至少一条可见单元格边框。 / Checks whether a row contains any visible cell border."""
+        """判断一行是否包含至少一条可见单元格边框。 / Checks whether a row contains any visible cell border.
+
+        参数说明 / Args:
+            reader: 当前 Sheet 的统一读取器，可取得工作表及单元格。
+            row_number: 需要检查边框的 Excel 行号。
+        """
 
         for column_number in range(1, reader.worksheet.max_column + 1):
             cell = reader.worksheet.cell(
@@ -310,7 +354,13 @@ class ExcelDocumentParser:
         row_number: int,
         current_section: str | None,
     ) -> tuple[ParsedBlock, int, bool] | None:
-        """识别单独占一行的标题、章节或备注。 / Detects a standalone title, section, or note."""
+        """识别单独占一行的标题、章节或备注。 / Detects a standalone title, section, or note.
+
+        参数说明 / Args:
+            reader: 当前 Sheet 的读取辅助对象，用来读取真实单元格和合并区域。
+            row_number: 当前正在判断的 Excel 行号。
+            current_section: 前面最近识别到的章节标题，备注 Block 需要继承它。
+        """
 
         cells = reader.get_real_nonempty_cells(row_number)
 
@@ -374,7 +424,13 @@ class ExcelDocumentParser:
         rows: list[int],
         current_section: str | None,
     ) -> ParsedBlock | None:
-        """把连续的普通行转换为键值对、段落或表格。 / Converts consecutive rows into a key-value block, paragraph, or table."""
+        """把连续的普通行转换为键值对、段落或表格。 / Converts consecutive rows into a key-value block, paragraph, or table.
+
+        参数说明 / Args:
+            reader: 当前 Sheet 的统一读取器。
+            rows: 需要一起分类的连续行号。
+            current_section: 这些行所属的章节名称，写入最终 Block metadata。
+        """
 
         if not rows:
             return None
@@ -470,7 +526,14 @@ class ExcelDocumentParser:
         first_column: int,
         last_column: int,
     ) -> bool:
-        """判断候选区域是否由可见边框围成矩形。 / Checks whether visible borders close the candidate rectangle."""
+        """判断候选区域是否由可见边框围成矩形。 / Checks whether visible borders close the candidate rectangle.
+
+        参数说明 / Args:
+            reader: 当前 Sheet 的统一读取器，用于取得各边界单元格。
+            rows: 候选表格包含的连续行号。
+            first_column: 候选区域最左侧列号。
+            last_column: 候选区域最右侧列号。
+        """
 
         first_row = rows[0]
         last_row = rows[-1]
@@ -515,7 +578,12 @@ class ExcelDocumentParser:
 
     @staticmethod
     def _has_visible_border(cell: Cell, side_name: str) -> bool:
-        """检查单元格指定方向是否存在可见边框。 / Checks whether one cell side has a visible border."""
+        """检查单元格指定方向是否存在可见边框。 / Checks whether one cell side has a visible border.
+
+        参数说明 / Args:
+            cell: 需要检查的 openpyxl 单元格对象。
+            side_name: 要检查的方向，只应为 left、right、top 或 bottom。
+        """
 
         side = getattr(cell.border, side_name)
         if side is None:
@@ -527,7 +595,11 @@ class ExcelDocumentParser:
         self,
         blocks: list[ParsedBlock],
     ) -> list[ParsedBlock]:
-        """把相邻标题、说明和备注加入表格检索正文。 / Adds adjacent titles, descriptions, and notes to table search text."""
+        """把相邻标题、说明和备注加入表格检索正文。 / Adds adjacent titles, descriptions, and notes to table search text.
+
+        参数说明 / Args:
+            blocks: 当前 Sheet 已按原始顺序生成的全部内容块。
+        """
 
         enriched_blocks: list[ParsedBlock] = []
 
@@ -567,7 +639,12 @@ class ExcelDocumentParser:
         candidate: ParsedBlock,
         table: ParsedBlock,
     ) -> bool:
-        """判断前一个内容块是否是表格的标题或说明。 / Checks whether the previous block describes the table."""
+        """判断前一个内容块是否是表格的标题或说明。 / Checks whether the previous block describes the table.
+
+        参数说明 / Args:
+            candidate: 位于表格前面的标题或段落候选 Block。
+            table: 正在寻找前置说明的表格 Block。
+        """
 
         if candidate.sheet != table.sheet:
             return False
@@ -589,7 +666,12 @@ class ExcelDocumentParser:
         table: ParsedBlock,
         candidate: ParsedBlock,
     ) -> bool:
-        """判断后一个内容块是否是表格的补充备注。 / Checks whether the following block is a table note."""
+        """判断后一个内容块是否是表格的补充备注。 / Checks whether the following block is a table note.
+
+        参数说明 / Args:
+            table: 正在寻找后置备注的表格 Block。
+            candidate: 位于表格后面的备注候选 Block。
+        """
 
         if candidate.sheet != table.sheet:
             return False
@@ -604,7 +686,12 @@ class ExcelDocumentParser:
         first_block: ParsedBlock,
         second_block: ParsedBlock,
     ) -> bool:
-        """判断两个内容块之间是否最多只有一行空白。 / Checks whether blocks have at most one blank row between them."""
+        """判断两个内容块之间是否最多只有一行空白。 / Checks whether blocks have at most one blank row between them.
+
+        参数说明 / Args:
+            first_block: 排在前面的内容块。
+            second_block: 排在后面的内容块。
+        """
 
         # table.rows 只表示数据行，不能用它计算与表头的距离。
         if first_block.cell_range is None or second_block.cell_range is None:
@@ -624,7 +711,11 @@ class ExcelDocumentParser:
 
     @staticmethod
     def _first_row_number(rows: str | None) -> int | None:
-        """读取Block位置中的第一行行号。 / Reads the first row number from block location metadata."""
+        """读取Block位置中的第一行行号。 / Reads the first row number from block location metadata.
+
+        参数说明 / Args:
+            rows: Block 的行范围字符串，例如 "3" 或 "3:8"；没有定位时为 None。
+        """
 
         if rows is None:
             return None
@@ -634,7 +725,11 @@ class ExcelDocumentParser:
 
     @staticmethod
     def _last_row_number(rows: str | None) -> int | None:
-        """读取Block位置中的最后一行行号。 / Reads the last row number from block location metadata."""
+        """读取Block位置中的最后一行行号。 / Reads the last row number from block location metadata.
+
+        参数说明 / Args:
+            rows: Block 的行范围字符串，例如 "3" 或 "3:8"；没有定位时为 None。
+        """
 
         if rows is None:
             return None
@@ -647,7 +742,12 @@ class ExcelDocumentParser:
         reader: _WorksheetReader,
         rows: list[int],
     ) -> bool:
-        """判断区域是否由成对的 Label 和 Value 组成。 / Checks whether a region contains label/value pairs."""
+        """判断区域是否由成对的 Label 和 Value 组成。 / Checks whether a region contains label/value pairs.
+
+        参数说明 / Args:
+            reader: 当前 Sheet 的统一读取器，只读取真实保存值的单元格。
+            rows: 需要判断是否为键值对区域的连续行号。
+        """
 
         first_row_cells = reader.get_real_nonempty_cells(rows[0])
 
@@ -725,7 +825,12 @@ class ExcelDocumentParser:
         reader: _WorksheetReader,
         rows: list[int],
     ) -> str:
-        """把键值对区域转换为“名称=值”的文本。 / Converts key-value cells into name=value text."""
+        """把键值对区域转换为“名称=值”的文本。 / Converts key-value cells into name=value text.
+
+        参数说明 / Args:
+            reader: 当前 Sheet 的统一读取器。
+            rows: 已确定为键值对结构的行号列表。
+        """
 
         lines: list[str] = []
 
@@ -751,7 +856,14 @@ class ExcelDocumentParser:
         first_column: int,
         last_column: int,
     ) -> str:
-        """把表格转换为带完整表头的逐行文本。 / Converts a table into row text with full headers."""
+        """把表格转换为带完整表头的逐行文本。 / Converts a table into row text with full headers.
+
+        参数说明 / Args:
+            reader: 当前 Sheet 的统一读取器，负责合并单元格逻辑值。
+            rows: 表头和数据行组成的完整表格行号。
+            first_column: 表格最左侧列号。
+            last_column: 表格最右侧列号。
+        """
 
         header_row_count = self._detect_header_row_count(
             reader,
@@ -801,7 +913,14 @@ class ExcelDocumentParser:
         first_column: int,
         last_column: int,
     ) -> int:
-        """判断表格使用一行表头还是两行表头。 / Detects whether a table has one or two header rows."""
+        """判断表格使用一行表头还是两行表头。 / Detects whether a table has one or two header rows.
+
+        参数说明 / Args:
+            reader: 当前 Sheet 的统一读取器，用于检查合并区域和第二行值。
+            rows: 整个候选表格的行号列表。
+            first_column: 表格最左侧列号，用于排除表格外的合并区域。
+            last_column: 表格最右侧列号，用于排除表格外的合并区域。
+        """
 
         if len(rows) < 3:
             return 1
@@ -846,7 +965,14 @@ class ExcelDocumentParser:
         column_number: int,
         first_column: int,
     ) -> str:
-        """把父表头和子表头组合成一个完整名称。 / Combines parent and child headers into one name."""
+        """把父表头和子表头组合成一个完整名称。 / Combines parent and child headers into one name.
+
+        参数说明 / Args:
+            reader: 当前 Sheet 的统一读取器。
+            header_rows: 已判断为表头的一个或两个行号。
+            column_number: 当前正在生成名称的列号。
+            first_column: 表格起始列号，用于生成缺少表头时的相对列名。
+        """
 
         header_parts: list[str] = []
 
@@ -873,7 +999,14 @@ class ExcelDocumentParser:
         first_column: int,
         last_column: int,
     ) -> str:
-        """把无法继续分类的一行转换为普通段落。 / Converts an unclassified row into a paragraph."""
+        """把无法继续分类的一行转换为普通段落。 / Converts an unclassified row into a paragraph.
+
+        参数说明 / Args:
+            reader: 当前 Sheet 的统一读取器。
+            row_number: 需要转换成段落的行号。
+            first_column: 该行内容区域的起始列号。
+            last_column: 该行内容区域的结束列号。
+        """
 
         values: list[str] = []
 
@@ -891,7 +1024,14 @@ class ExcelDocumentParser:
         first_column: int,
         last_column: int,
     ) -> str:
-        """把连续的无边框普通行合并为段落。 / Combines consecutive unbordered rows into a paragraph."""
+        """把连续的无边框普通行合并为段落。 / Combines consecutive unbordered rows into a paragraph.
+
+        参数说明 / Args:
+            reader: 当前 Sheet 的统一读取器。
+            rows: 需要合并的连续普通行号。
+            first_column: 这组行实际使用的最小列号。
+            last_column: 这组行实际使用的最大列号。
+        """
 
         lines: list[str] = []
 
@@ -909,7 +1049,11 @@ class ExcelDocumentParser:
 
     @staticmethod
     def _to_text(value: Any) -> str:
-        """把单元格值转换成清理过首尾空白的文本。 / Converts a cell value into trimmed text."""
+        """把单元格值转换成清理过首尾空白的文本。 / Converts a cell value into trimmed text.
+
+        参数说明 / Args:
+            value: 从 Excel 单元格读取出的任意类型值，例如文字、数字或日期。
+        """
 
         return str(value).strip()
 
@@ -920,7 +1064,14 @@ class ExcelDocumentParser:
         last_column: int,
         last_row: int,
     ) -> str:
-        """把数字坐标转换成 Excel 的 A1:C3 格式。 / Formats numeric bounds as an Excel A1:C3 range."""
+        """把数字坐标转换成 Excel 的 A1:C3 格式。 / Formats numeric bounds as an Excel A1:C3 range.
+
+        参数说明 / Args:
+            first_column: 区域左上角列号，从 1 开始。
+            first_row: 区域左上角行号，从 1 开始。
+            last_column: 区域右下角列号。
+            last_row: 区域右下角行号。
+        """
 
         start = f"{get_column_letter(first_column)}{first_row}"
         end = f"{get_column_letter(last_column)}{last_row}"
@@ -928,7 +1079,12 @@ class ExcelDocumentParser:
 
     @staticmethod
     def _format_row_range(first_row: int, last_row: int) -> str:
-        """把行号转换成“3”或“3:8”格式。 / Formats rows as either 3 or 3:8."""
+        """把行号转换成“3”或“3:8”格式。 / Formats rows as either 3 or 3:8.
+
+        参数说明 / Args:
+            first_row: 内容区域的第一行行号。
+            last_row: 内容区域的最后一行行号。
+        """
 
         if first_row == last_row:
             return str(first_row)
