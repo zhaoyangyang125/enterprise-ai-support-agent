@@ -73,6 +73,49 @@ def test_rrf_ranking_and_duplicate_removal():
     assert all(0 <= item.score <= 1 for item in result)
 
 
+def test_rrf_preserves_raw_relevance_signals():
+    """RRF只改变排序分数，并保留证据充分性所需信号。 / Preserves raw relevance signals."""
+    value = chunk("A", "TEST SAFETY CODE 7392")
+    vector_result = retrieved(value, 0.72).model_copy(
+        update={"vector_score": 0.72}
+    )
+    keyword_result = retrieved(value, 1.0).model_copy(
+        update={"keyword_score": 1.0, "keyword_match_ratio": 1.0}
+    )
+
+    result = reciprocal_rank_fusion([[vector_result], [keyword_result]])
+
+    assert result[0].score == 1.0
+    assert result[0].vector_score == 0.72
+    assert result[0].keyword_score == 1.0
+    assert result[0].keyword_match_ratio == 1.0
+
+
+def test_bm25_reports_strong_coverage_for_exact_code_and_excel_location():
+    """精确代码与Excel定位产生强关键词覆盖率。 / Reports strong exact-match coverage."""
+    values = [
+        chunk("CODE", "TEST SAFETY CODE 7392"),
+        chunk("EXCEL", "image description", sheet="Sheet1", cell_range="C67:N88"),
+    ]
+    repository = InMemoryKeywordRepository(values)
+
+    code_result = repository.search(
+        "TEST SAFETY CODE 7392",
+        frozenset({"PUBLIC-V1"}),
+        2,
+    )
+    excel_result = repository.search(
+        "Sheet1 C67:N88",
+        frozenset({"PUBLIC-V1"}),
+        2,
+    )
+
+    assert code_result[0].chunk_id == "CODE"
+    assert code_result[0].keyword_match_ratio == 1.0
+    assert excel_result[0].chunk_id == "EXCEL"
+    assert excel_result[0].keyword_match_ratio == 1.0
+
+
 @pytest.mark.parametrize("vector_ids,keyword_ids,expected", [
     (["A"], [], ["A"]), ([], ["B"], ["B"]), ([], [], []),
     (["A"], ["A"], ["A"]), (["A"], ["B"], ["A", "B"]),

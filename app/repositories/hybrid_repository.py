@@ -71,8 +71,34 @@ class Bm25KeywordRetriever:
         results: list[RetrievedChunk] = []
         for chunk, raw_score in raw_results[:limit]:
             normalized_score = raw_score / maximum_score
-            results.append(RetrievedChunk(**chunk.model_dump(), score=normalized_score))
+            document_terms = self._tokenize(self._searchable_text(chunk))
+            match_ratio = self._calculate_match_ratio(query_terms, document_terms)
+            result = RetrievedChunk(
+                **chunk.model_dump(),
+                score=normalized_score,
+                keyword_score=normalized_score,
+                keyword_match_ratio=match_ratio,
+            )
+            results.append(result)
         return results
+
+    @staticmethod
+    def _calculate_match_ratio(
+        query_terms: list[str],
+        document_terms: list[str],
+    ) -> float:
+        """计算查询词中实际出现在证据里的比例。 / Calculates query-term coverage in evidence."""
+        unique_query_terms = set(query_terms)
+        if not unique_query_terms:
+            return 0.0
+
+        document_term_set = set(document_terms)
+        matched_count = 0
+        for term in unique_query_terms:
+            if term in document_term_set:
+                matched_count += 1
+
+        return matched_count / len(unique_query_terms)
 
     def _score_document(
         self,
@@ -202,6 +228,9 @@ def reciprocal_rank_fusion(
         return []
     scores: dict[str, float] = {}
     chunks: dict[str, RetrievedChunk] = {}
+    vector_scores: dict[str, float] = {}
+    keyword_scores: dict[str, float] = {}
+    keyword_match_ratios: dict[str, float] = {}
     for results in result_lists:
         seen_in_list: set[str] = set()
         for index in range(len(results)):
@@ -215,13 +244,41 @@ def reciprocal_rank_fusion(
             scores[chunk.chunk_id] = current_score + rank_score
             if chunk.chunk_id not in chunks:
                 chunks[chunk.chunk_id] = chunk
+            _keep_highest_signal(vector_scores, chunk.chunk_id, chunk.vector_score)
+            _keep_highest_signal(keyword_scores, chunk.chunk_id, chunk.keyword_score)
+            _keep_highest_signal(
+                keyword_match_ratios,
+                chunk.chunk_id,
+                chunk.keyword_match_ratio,
+            )
     maximum_possible = len(result_lists) / (rrf_k + 1)
     fused: list[RetrievedChunk] = []
     for chunk_id, raw_score in scores.items():
         normalized_score = min(1.0, raw_score / maximum_possible)
-        fused.append(chunks[chunk_id].model_copy(update={"score": normalized_score}))
+        updates = {
+            "score": normalized_score,
+            "vector_score": vector_scores.get(chunk_id),
+            "keyword_score": keyword_scores.get(chunk_id),
+            "keyword_match_ratio": keyword_match_ratios.get(chunk_id),
+        }
+        fused_chunk = chunks[chunk_id].model_copy(update=updates)
+        fused.append(fused_chunk)
     fused.sort(key=lambda chunk: (-chunk.score, chunk.chunk_id))
     return fused
+
+
+def _keep_highest_signal(
+    signals: dict[str, float],
+    chunk_id: str,
+    value: float | None,
+) -> None:
+    """保留同一Chunk最强的原始检索信号。 / Keeps the strongest raw retrieval signal."""
+    if value is None:
+        return
+
+    current_value = signals.get(chunk_id)
+    if current_value is None or value > current_value:
+        signals[chunk_id] = value
 
 
 class HybridVectorRepository:
@@ -262,7 +319,10 @@ class HybridVectorRepository:
         reliable_vector_results: list[RetrievedChunk] = []
         for chunk in vector_results:
             if chunk.score >= self._minimum_vector_score:
-                reliable_vector_results.append(chunk)
+                chunk_with_signal = chunk.model_copy(
+                    update={"vector_score": chunk.score}
+                )
+                reliable_vector_results.append(chunk_with_signal)
         keyword_results = self._keyword.search(
             query,
             allowed_document_version_ids,

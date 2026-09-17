@@ -183,6 +183,134 @@ def test_answer_returns_no_evidence_below_score_threshold() -> None:
     assert answer_generator.calls == []
 
 
+def test_answer_rejects_high_rrf_score_when_raw_signals_are_weak() -> None:
+    """RRF排名高但原始相关性弱时拒答。 / Rejects high RRF rank with weak raw relevance."""
+    irrelevant_chunk = make_chunk(score=0.5).model_copy(
+        update={
+            "content": "走行中は動画画面への遷移を禁止します。",
+            "vector_score": 0.086,
+            "keyword_score": 1.0,
+            "keyword_match_ratio": 0.12,
+        }
+    )
+    answer_generator = FakeAnswerGenerator()
+    service = RagService(
+        authorization_service=FakeAuthorizationService(
+            frozenset({"TRAVEL_POLICY-V2"})
+        ),
+        vector_repository=FakeVectorRepository([irrelevant_chunk]),
+        answer_generator=answer_generator,
+    )
+
+    result = service.answer(
+        "会社では月面基地の駐車料金を毎月いくらまで精算できますか？",
+        CurrentUser(user_id="U001"),
+    )
+
+    assert result.evidence_found is False
+    assert result.answer == NO_EVIDENCE_MESSAGE
+    assert result.sources == []
+    assert answer_generator.calls == []
+
+
+def test_answer_accepts_exact_keyword_evidence() -> None:
+    """精确编号覆盖充分时保留证据。 / Accepts strong exact-keyword evidence."""
+    exact_chunk = make_chunk(score=0.5).model_copy(
+        update={
+            "content": "TEST SAFETY CODE 7392",
+            "vector_score": 0.1,
+            "keyword_score": 1.0,
+            "keyword_match_ratio": 1.0,
+        }
+    )
+    answer_generator = FakeAnswerGenerator()
+    service = RagService(
+        authorization_service=FakeAuthorizationService(
+            frozenset({"TRAVEL_POLICY-V2"})
+        ),
+        vector_repository=FakeVectorRepository([exact_chunk]),
+        answer_generator=answer_generator,
+    )
+
+    result = service.answer(
+        "TEST SAFETY CODE 7392",
+        CurrentUser(user_id="U001"),
+    )
+
+    assert result.evidence_found is True
+    assert len(answer_generator.calls) == 1
+
+
+def test_answer_accepts_strong_semantic_evidence() -> None:
+    """关键词覆盖较低时，强语义命中仍可回答。 / Accepts strong semantic evidence."""
+    semantic_chunk = make_chunk(score=0.5).model_copy(
+        update={
+            "vector_score": 0.72,
+            "keyword_score": 0.2,
+            "keyword_match_ratio": 0.1,
+        }
+    )
+    answer_generator = FakeAnswerGenerator()
+    service = RagService(
+        authorization_service=FakeAuthorizationService(
+            frozenset({"TRAVEL_POLICY-V2"})
+        ),
+        vector_repository=FakeVectorRepository([semantic_chunk]),
+        answer_generator=answer_generator,
+    )
+
+    result = service.answer(
+        "国内出差のホテル代はいくらですか？",
+        CurrentUser(user_id="U001"),
+    )
+
+    assert result.evidence_found is True
+    assert len(answer_generator.calls) == 1
+
+
+def test_answer_prefers_exact_excel_location_over_marginal_vector_match() -> None:
+    """精确Excel定位优先于边缘语义命中。 / Prefers exact Excel location evidence."""
+    marginal_vector_chunk = make_chunk(score=0.5).model_copy(
+        update={
+            "chunk_id": "UNRELATED-PDF",
+            "content": "TEST SAFETY CODE 7392",
+            "vector_score": 0.165,
+            "keyword_match_ratio": None,
+        }
+    )
+    exact_excel_chunk = make_chunk(score=0.5).model_copy(
+        update={
+            "chunk_id": "EXCEL-IMAGE",
+            "content": "跨越海面的现代桥梁",
+            "source_name": "fictional_bridge.xlsx",
+            "sheet": "Sheet1",
+            "cell_range": "C67:N88",
+            "vector_score": None,
+            "keyword_score": 1.0,
+            "keyword_match_ratio": 1.0,
+        }
+    )
+    answer_generator = FakeAnswerGenerator()
+    service = RagService(
+        authorization_service=FakeAuthorizationService(
+            frozenset({"TRAVEL_POLICY-V2"})
+        ),
+        vector_repository=FakeVectorRepository(
+            [marginal_vector_chunk, exact_excel_chunk]
+        ),
+        answer_generator=answer_generator,
+    )
+
+    result = service.answer(
+        "Sheet1 C67:N88",
+        CurrentUser(user_id="U001"),
+    )
+
+    passed_evidence = answer_generator.calls[0][1]
+    assert [chunk.chunk_id for chunk in passed_evidence] == ["EXCEL-IMAGE"]
+    assert result.sources[0].source_name == "fictional_bridge.xlsx"
+
+
 def test_answer_passes_metadata_filter_and_refuses_when_no_result() -> None:
     """验证 metadata 条件传到 Repository，过滤后无结果时不调用回答生成器。 / Verifies metadata filters reach the repository and empty filtered results skip answer generation."""
 

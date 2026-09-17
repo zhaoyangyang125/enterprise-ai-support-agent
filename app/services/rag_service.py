@@ -43,14 +43,30 @@ class RagService:
         vector_repository: VectorRepository,
         answer_generator: AnswerGenerator,
         minimum_score: float = 0.15,
+        minimum_keyword_match_ratio: float = 0.3,
+        exact_keyword_match_ratio: float = 0.8,
         retrieval_limit: int = 5,
     ) -> None:
         """接收 RAG 流程依赖项和证据阈值。 / Receives RAG dependencies and the evidence threshold."""
+
+        if not 0.0 <= minimum_score <= 1.0:
+            raise ValueError("minimum_score must be between 0 and 1")
+        if not 0.0 <= minimum_keyword_match_ratio <= 1.0:
+            raise ValueError("minimum_keyword_match_ratio must be between 0 and 1")
+        if not 0.0 <= exact_keyword_match_ratio <= 1.0:
+            raise ValueError("exact_keyword_match_ratio must be between 0 and 1")
+        if exact_keyword_match_ratio < minimum_keyword_match_ratio:
+            raise ValueError(
+                "exact_keyword_match_ratio must not be lower than "
+                "minimum_keyword_match_ratio"
+            )
 
         self._authorization_service = authorization_service
         self._vector_repository = vector_repository
         self._answer_generator = answer_generator
         self._minimum_score = minimum_score
+        self._minimum_keyword_match_ratio = minimum_keyword_match_ratio
+        self._exact_keyword_match_ratio = exact_keyword_match_ratio
         self._retrieval_limit = retrieval_limit
 
     def answer(
@@ -73,7 +89,7 @@ class RagService:
             limit=self._retrieval_limit,
             metadata_filter=metadata_filter,
         )
-        evidence = [chunk for chunk in retrieved if chunk.score >= self._minimum_score]
+        evidence = self._select_sufficient_evidence(retrieved)
         if not evidence:
             return self._no_evidence()
 
@@ -82,6 +98,56 @@ class RagService:
             evidence_found=True,
             sources=self._build_citations(evidence),
         )
+
+    def _select_sufficient_evidence(
+        self,
+        retrieved: list[RetrievedChunk],
+    ) -> list[RetrievedChunk]:
+        """使用原始检索信号过滤证据，不把RRF排名分数当相关性。 / Filters evidence using raw signals, not RRF rank scores."""
+        candidates: list[tuple[RetrievedChunk, int]] = []
+        highest_level = 0
+        for chunk in retrieved:
+            evidence_level = self._get_evidence_level(chunk)
+            if evidence_level == 0:
+                continue
+
+            candidates.append((chunk, evidence_level))
+            if evidence_level > highest_level:
+                highest_level = evidence_level
+
+        evidence: list[RetrievedChunk] = []
+        for chunk, evidence_level in candidates:
+            if evidence_level == highest_level:
+                evidence.append(chunk)
+        return evidence
+
+    def _get_evidence_level(self, chunk: RetrievedChunk) -> int:
+        """返回证据等级，精确关键词高于普通充分证据。 / Returns evidence strength level."""
+        has_hybrid_signal = (
+            chunk.vector_score is not None
+            or chunk.keyword_match_ratio is not None
+        )
+
+        if not has_hybrid_signal:
+            # 保持单路Repository和既有测试的兼容行为。
+            # Keeps compatibility with repositories that only provide score.
+            if chunk.score >= self._minimum_score:
+                return 1
+            return 0
+
+        if chunk.keyword_match_ratio is not None:
+            if chunk.keyword_match_ratio >= self._exact_keyword_match_ratio:
+                return 2
+
+        if chunk.vector_score is not None:
+            if chunk.vector_score >= self._minimum_score:
+                return 1
+
+        if chunk.keyword_match_ratio is not None:
+            if chunk.keyword_match_ratio >= self._minimum_keyword_match_ratio:
+                return 1
+
+        return 0
 
     @staticmethod
     def _no_evidence() -> RagAnswerResponse:
