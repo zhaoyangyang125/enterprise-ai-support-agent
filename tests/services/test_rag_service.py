@@ -213,6 +213,35 @@ def test_answer_rejects_high_rrf_score_when_raw_signals_are_weak() -> None:
     assert answer_generator.calls == []
 
 
+def test_answer_rejects_hash_collision_below_default_semantic_threshold() -> None:
+    """本地Hash碰撞分数不足时仍拒答。 / Rejects a weak local-hash collision."""
+
+    irrelevant_chunk = make_chunk(score=0.5).model_copy(
+        update={
+            "content": "架空教材：車載HMIテスト仕様書",
+            "vector_score": 0.21,
+            "keyword_match_ratio": 0.06,
+        }
+    )
+    answer_generator = FakeAnswerGenerator()
+    service = RagService(
+        authorization_service=FakeAuthorizationService(
+            frozenset({"TRAVEL_POLICY-V2"})
+        ),
+        vector_repository=FakeVectorRepository([irrelevant_chunk]),
+        answer_generator=answer_generator,
+    )
+
+    result = service.answer(
+        "社員食堂の朝食補助上限はいくらですか？",
+        CurrentUser(user_id="U001"),
+    )
+
+    assert result.evidence_found is False
+    assert result.answer == NO_EVIDENCE_MESSAGE
+    assert answer_generator.calls == []
+
+
 def test_answer_accepts_exact_keyword_evidence() -> None:
     """精确编号覆盖充分时保留证据。 / Accepts strong exact-keyword evidence."""
     exact_chunk = make_chunk(score=0.5).model_copy(

@@ -1,5 +1,51 @@
 # Enterprise AI Support Agent
 
+## プロジェクト概要
+
+Enterprise AI Support Agentは、社内業務データと社内文書を安全に扱うことを目的とした、Python / FastAPIベースの学習用生成AIアプリケーションです。
+
+主な機能は、本人の有給休暇残日数照会、安全な有給休暇申請、権限制御付きRAG、PDF / Excel解析、OCR / Vision画像証拠、Vector Search + BM25 + RRFによるHybrid Searchです。
+
+文書検索では、LLMにアクセス権限を判断させません。Business DBから取得したACLと有効な文書バージョンを検索前に適用し、十分な根拠がない場合は回答を生成しないEvidence Gateを実装しています。CitationはLLMが作成するのではなく、保存済みのpage、Sheet、Cell Range、image metadataから生成します。
+
+```text
+CurrentUser + Query
+-> Authentication / Authorization
+-> Retrieval-time ACL Filter
+-> Vector Search + BM25
+-> Reciprocal Rank Fusion
+-> Evidence Sufficiency Gate
+-> Answer + Metadata Citation
+```
+
+### 主な技術
+
+- Python 3.12、FastAPI、Pydantic、SQLAlchemy、SQLite
+- Chroma、Hash Embedding、BM25、Reciprocal Rank Fusion
+- PDF / Excel Parser、Google Cloud Vision OCR、Gemini Vision
+- pytest、Docker、Git feature branch / Pull Request
+
+### 実ファイル評価
+
+完全に架空のPDF / Excel 5ファイルを実際のParserとChromaに通し、60個のChunkを作成しました。Golden Datasetは24問で、21問には人手で確認したファイル、ページ、またはSheet / Cell Rangeの正解情報があります。残りは回答不能2問とACL拒否1問です。
+
+| 指标 | Vector-only | Hybrid |
+|---|---:|---:|
+| Hit@1 | 0.7143 | 0.6667 |
+| Hit@5 / Recall@5 | 1.0000 | 1.0000 |
+| MRR | 0.8310 | 0.8056 |
+| Source Hit Rate | 1.0000 | 1.0000 |
+
+回答可能な21問はすべて正しいCitationを返し、回答拒否 / ACLの3ケースもすべて合格しました。一方、この実ファイルセットではHybridのHit@1がVector-onlyを上回らなかったため、小規模な結果を本番精度として誇張していません。評価方法、失敗分析、制約は [`docs/evaluation/real_corpus_evaluation_report.md`](docs/evaluation/real_corpus_evaluation_report.md) に記録しています。
+
+最新の回帰テスト結果はBackend `169 passed / 3 skipped`、Frontend `4 passed / 0 failed`です。Skipには明示実行が必要なクラウドliveテストが含まれます。
+
+評価の実行：
+
+```powershell
+python -m scripts.run_corpus_evaluation
+```
+
 ## 可选图片理解（Phase 6）
 
 默认只解析原生文字。需要Excel图片理解时，在启动服务的终端设置 `DOCUMENT_IMAGE_MODE=vision`、`GEMINI_API_KEY` 和 `GEMINI_VISION_MODEL`，然后重新启动。密钥不要写入代码或提交到Git。模型名使用你的Gemini账户可用且支持图片和结构化输出的模型。
@@ -68,7 +114,7 @@ The local implementation does not require a paid LLM or embedding API. The runti
 
 查询端现在使用真正的 Hybrid Search：向量检索负责语义相近内容，BM25 负责编号、型号、Sheet 和 Cell Range 等精确字符串，RRF 根据两路排名进行融合和去重。两条检索链都只接收已授权且符合 metadata filter 的 Chunk，融合后还会再次检查安全范围。文档写入流程仍只写入原有 Chroma，不建立第二套文档索引。
 
-固定的 9 题虚构回归集会同时输出 Hit@1、Hit@K、Recall@K 和 MRR。在当前小样本中，Vector-only 的 Hit@1/MRR 为 `0.8571/0.9048`，Hybrid 为 `1.0/1.0`。这只能证明固定回归样本通过，不能当作生产准确率。
+固定的9题内存回归集用于快速检查算法。另有24题真实文件评测集负责验证PDF/Excel解析、OCR/Vision边界、Chroma、权限、拒答和Citation。两组结果都只代表固定虚构样本，不能当作生产准确率。
 
 ## Local Setup (PowerShell)
 

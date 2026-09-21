@@ -63,6 +63,7 @@ class DocumentService:
             if not blocks:
                 raise ValueError("The document did not contain indexable content")
             chunks = []
+            chunk_id_counts: dict[str, int] = {}
             for block in blocks:
                 chunk = self._to_chunk(
                     block,
@@ -70,6 +71,9 @@ class DocumentService:
                     document_id,
                     document_version_id,
                 )
+                duplicate_index = chunk_id_counts.get(chunk.chunk_id, 0)
+                chunk_id_counts[chunk.chunk_id] = duplicate_index + 1
+                chunk = self._with_unique_chunk_id(chunk, duplicate_index)
                 chunks.append(chunk)
             self._vector_index.upsert_chunks(chunks)
             if grant_read_to_user_id is not None:
@@ -147,3 +151,16 @@ class DocumentService:
             cell_range=block.cell_range,
             rows=block.rows,
         )
+
+    @staticmethod
+    def _with_unique_chunk_id(
+        chunk: IndexedChunk,
+        duplicate_index: int,
+    ) -> IndexedChunk:
+        """只为同批次重复Chunk生成稳定后缀ID。 / Creates a stable ID only for later duplicate chunks."""
+
+        if duplicate_index == 0:
+            return chunk
+        identity = f"{chunk.chunk_id}|duplicate|{duplicate_index}"
+        unique_id = hashlib.sha256(identity.encode("utf-8")).hexdigest()
+        return chunk.model_copy(update={"chunk_id": unique_id})

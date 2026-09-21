@@ -5,9 +5,14 @@ from datetime import datetime
 
 from app.auth.context import CurrentUser
 from app.db.models import LeaveBalance
-from practice.services.leave_availability_service import LeaveAvailabilityService
 import pytest
 from app.services.errors import LeaveBalanceNotFoundError
+
+leave_availability_module = pytest.importorskip(
+    "practice.services.leave_availability_service",
+    reason="optional learning-only practice package is not part of the formal application",
+)
+LeaveAvailabilityService = leave_availability_module.LeaveAvailabilityService
 
 class FakeLeaveRepository:
     def __init__(self, result: LeaveBalance | None) -> None:
