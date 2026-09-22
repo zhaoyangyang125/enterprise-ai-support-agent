@@ -1,0 +1,103 @@
+# 実ファイルRAG評価レポート / 真实文件RAG评测报告
+
+評価日: 2026-09-20
+
+## 1. 目的
+
+この評価は、メモリ上に手作業で作成したChunkだけではなく、実際のPDF/ExcelファイルをParser、OCR/Vision境界、Chroma、Hybrid Search、Evidence Gateまで通して検証する。
+
+本次评测不只使用内存中的假Chunk，而是让真实PDF/Excel文件经过Parser、OCR/Vision边界、Chroma、Hybrid Search和Evidence Gate。
+
+## 2. 評価データ
+
+すべての資料は本プロジェクト専用に作成した架空データであり、実在企業の仕様書や機密情報を含まない。
+
+| 文档 | 类型 | 生成Chunk数 |
+|---|---|---:|
+| `fictional_hmi_policy.pdf` | 文字型PDF | 12 |
+| `fictional_hmi_test_spec.xlsx` | 多Sheet Excel | 25 |
+| `fictional_can_diagnostics_reference.pdf` | 文字型PDF | 12 |
+| `fictional_hmi_change_review.xlsx` | 表格、备注、嵌入图片 | 10 |
+| `fictional_ocr_display_notice.pdf` | 扫描风格PDF | 1 |
+| 合计 | 5份文件 | 60 |
+
+Golden Dataset包含21个有答案问题，以及2个无答案拒答问题和1个ACL拒绝问题，共24题。预期来源由人工确认到文件、PDF页码或Excel Sheet / Cell Range。
+
+## 3. 実行範囲
+
+实际执行链路：
+
+```text
+真实PDF / Excel
+-> DocumentService
+-> PDF / Excel Parser
+-> OCR / Vision边界
+-> ParsedBlock / IndexedChunk
+-> Chroma + Hash Embedding
+-> Vector Search / BM25 / RRF
+-> Evidence Gate
+-> metadata-based Citation
+```
+
+PDF/Excel解析、Business DB、Chroma、Vector/BM25/RRF、权限和Citation均使用真实本地实现。为了离线可重复执行，扫描PDF和Excel图片使用确定性的Fake OCR/Vision Provider；这部分不代表云OCR识别准确率。Google OCR与Gemini Vision的真实云调用结果由现有live测试和README中的独立验收记录覆盖。
+
+## 4. 結果
+
+Top-K固定为5。
+
+| 指标 | Vector-only | Hybrid |
+|---|---:|---:|
+| Hit@1 | 0.7143 | 0.6667 |
+| Hit@5 | 1.0000 | 1.0000 |
+| Recall@5 | 1.0000 | 1.0000 |
+| MRR | 0.8310 | 0.8056 |
+| Source Hit Rate | 1.0000 | 1.0000 |
+| 本机平均检索时间 | 3.858 ms | 12.650 ms |
+
+RAG最终证据判断：
+
+| 场景 | 结果 |
+|---|---:|
+| 21个有答案问题找到正确Citation | 21 / 21 |
+| 2个无答案问题正确拒答 | 2 / 2 |
+| 无权限用户查询受限文档正确拒绝 | 1 / 1 |
+
+平均耗时只是本机单次回归观测，不用于跨机器性能比较。
+
+## 5. 評価で発見した問題
+
+### 重复Chunk ID
+
+CAN PDF同一页出现两次相同的`100 ms`，旧逻辑生成了相同Chunk ID，导致Chroma拒绝整批写入。修复后，首个Chunk继续使用原ID，后续重复Chunk使用基于出现顺序的稳定ID，因此不会改变普通Chunk的既有ID。
+
+### 无关问题的Hash碰撞
+
+“员工食堂早餐补助”与HMI文档无关，但本地Hash Embedding产生了约0.21的偶然相似度。默认Evidence Gate语义阈值由0.15调整为0.25。调整后，21个正例仍全部找到正确Citation，两个无答案问题均正确拒答。
+
+## 6. 誠実な制約
+
+- 在这套真实文件集上，Hybrid的Hit@1没有超过Vector-only，因此不能宣称Hybrid在所有数据上都更准确。
+- Hybrid仍保持Hit@5、Recall@5和Source Hit Rate为1.0，并继续为编号、CAN ID、Sheet和Cell Range提供精确关键词能力。
+- 当前Hash Embedding仅用于离线架构和安全链路验证。生产环境需要正式Embedding模型，并重新进行阈值校准和更大规模评测。
+- 24题是面试项目规模的人工确认回归集，不代表生产环境总体准确率。
+
+## 7. 再現方法
+
+```powershell
+python -m scripts.run_corpus_evaluation
+```
+
+相关自动测试：
+
+```powershell
+python -m pytest tests/evaluation/test_corpus_suite.py -q
+```
+
+## 8. 全体回帰テスト
+
+```text
+Backend: 169 passed, 3 skipped, 2 deprecation warnings
+Frontend: 4 passed, 0 failed
+```
+
+Skip内訳は、明示実行が必要なGoogle OCR / Gemini Vision liveテスト2件と、正式アプリに含まれない任意の`practice`学習モジュール1件。警告2件はStarlette / httpxとAnyIOの非推奨APIに関するもので、今回の業務ロジック失敗ではない。

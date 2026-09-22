@@ -232,6 +232,21 @@ def test_to_chunk_preserves_existing_text_chunk_id_rule() -> None:
     assert chunk.chunk_id == expected_id
 
 
+def test_later_identical_chunk_gets_stable_unique_id() -> None:
+    """同页重复文字不会让Chroma收到重复ID。 / Prevents duplicate Chroma IDs for repeated text on one page."""
+
+    block = ParsedBlock(content="100 ms", content_type="title", page=1)
+    first = DocumentService._to_chunk(block, "can.pdf", "CAN", "CAN-V1")
+
+    unchanged = DocumentService._with_unique_chunk_id(first, 0)
+    second = DocumentService._with_unique_chunk_id(first, 1)
+    repeated_second = DocumentService._with_unique_chunk_id(first, 1)
+
+    assert unchanged.chunk_id == first.chunk_id
+    assert second.chunk_id != first.chunk_id
+    assert repeated_second.chunk_id == second.chunk_id
+
+
 def test_to_chunk_passes_image_metadata_without_internal_path() -> None:
     """验证图片 metadata 进入索引模型，但服务器内部路径不会进入索引。 / Verifies image metadata reaches indexing without the server-internal path."""
 

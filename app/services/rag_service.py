@@ -42,7 +42,7 @@ class RagService:
         authorization_service: AuthorizationService,
         vector_repository: VectorRepository,
         answer_generator: AnswerGenerator,
-        minimum_score: float = 0.15,
+        minimum_score: float = 0.25,
         minimum_keyword_match_ratio: float = 0.3,
         exact_keyword_match_ratio: float = 0.8,
         retrieval_limit: int = 5,
