@@ -5,6 +5,7 @@ from typing import Any, Protocol
 
 from app.schemas.rag import IndexedChunk, RetrievedChunk, RetrievalFilter
 from app.services.embedding_service import EmbeddingProvider
+from app.services.rag_provider_errors import EmbeddingIndexMismatchError
 
 
 class VectorRepository(Protocol):
@@ -139,6 +140,31 @@ class ChromaVectorRepository:
 
         self._collection = collection
         self._embedding_provider = embedding_provider
+        self._check_embedding_identity()
+
+    def _check_embedding_identity(self) -> None:
+        """真实模型不得复用旧 Hash 或其他模型的索引。 / Rejects incompatible indexes."""
+        identity = getattr(self._embedding_provider, "index_identity", None)
+        metadata = self._collection.metadata or {}
+        stored_identity = metadata.get("embedding_identity")
+        if identity is None:
+            if stored_identity is not None:
+                raise EmbeddingIndexMismatchError(
+                    "Embedding index is incompatible; reindex into a separate collection"
+                )
+            return
+        if stored_identity == identity:
+            return
+        if self._collection.count() > 0:
+            raise EmbeddingIndexMismatchError(
+                "Embedding index is incompatible; reindex into a separate collection"
+            )
+        updated_metadata = dict(metadata)
+        updated_metadata["embedding_identity"] = identity
+        # Chroma 不允许 modify 请求包含 hnsw:space，即使值没变。
+        # Chroma rejects hnsw:space on modify even when unchanged.
+        updated_metadata.pop("hnsw:space", None)
+        self._collection.modify(metadata=updated_metadata)
 
     @classmethod
     def persistent(
@@ -152,9 +178,13 @@ class ChromaVectorRepository:
         import chromadb
 
         client = chromadb.PersistentClient(path=str(path))
+        metadata = {"hnsw:space": "cosine"}
+        identity = getattr(embedding_provider, "index_identity", None)
+        if identity is not None:
+            metadata["embedding_identity"] = identity
         collection = client.get_or_create_collection(
             name=collection_name,
-            metadata={"hnsw:space": "cosine"},
+            metadata=metadata,
         )
         return cls(collection, embedding_provider)
 
@@ -259,6 +289,21 @@ class ChromaVectorRepository:
             chunk = self._from_stored_values(ids[index], content, metadata)
             if matches_retrieval_scope(chunk, allowed_document_version_ids, metadata_filter):
                 chunks.append(chunk)
+        return chunks
+
+    def list_all_chunks(self) -> list[IndexedChunk]:
+        """读取迁移所需的全部 Chunk，不用于用户检索。 / Lists all chunks for controlled migration."""
+        result = self._collection.get(include=["documents", "metadatas"])
+        ids = result.get("ids") or []
+        documents = result.get("documents") or []
+        metadatas = result.get("metadatas") or []
+        chunks: list[IndexedChunk] = []
+        for index in range(len(ids)):
+            content = documents[index]
+            metadata = metadatas[index]
+            if content is None or metadata is None:
+                continue
+            chunks.append(self._from_stored_values(ids[index], content, metadata))
         return chunks
 
     @classmethod

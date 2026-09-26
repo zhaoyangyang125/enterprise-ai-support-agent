@@ -270,6 +270,46 @@ def test_answer_accepts_exact_keyword_evidence() -> None:
     assert len(answer_generator.calls) == 1
 
 
+def test_exact_identifier_removes_unrelated_semantic_citation() -> None:
+    """编号命中时不附带仅语义相近但不含编号的来源。 / Removes unrelated citations."""
+    exact_chunk = make_chunk(score=0.5).model_copy(
+        update={
+            "chunk_id": "OCR-7392",
+            "content": "TEST SAFETY CODE 7392 最大速度限制为40 km/h。",
+            "source_name": "fictional_ocr_scan_7392.pdf",
+            "vector_score": 0.8,
+            "keyword_match_ratio": 1.0,
+        }
+    )
+    unrelated_chunk = make_chunk(score=0.49).model_copy(
+        update={
+            "chunk_id": "HMI-POLICY",
+            "content": "走行中は動画メニューへの遷移を禁止します。",
+            "source_name": "fictional_hmi_policy.pdf",
+            "vector_score": 0.7,
+            "keyword_match_ratio": 0.2,
+        }
+    )
+    answer_generator = FakeAnswerGenerator()
+    service = RagService(
+        authorization_service=FakeAuthorizationService(
+            frozenset({"TRAVEL_POLICY-V2"})
+        ),
+        vector_repository=FakeVectorRepository([exact_chunk, unrelated_chunk]),
+        answer_generator=answer_generator,
+    )
+
+    result = service.answer(
+        "TEST SAFETY CODE 7392 是什么？",
+        CurrentUser(user_id="U001"),
+    )
+
+    assert [chunk.chunk_id for chunk in answer_generator.calls[0][1]] == ["OCR-7392"]
+    assert [source.source_name for source in result.sources] == [
+        "fictional_ocr_scan_7392.pdf"
+    ]
+
+
 def test_answer_accepts_strong_semantic_evidence() -> None:
     """关键词覆盖较低时，强语义命中仍可回答。 / Accepts strong semantic evidence."""
     semantic_chunk = make_chunk(score=0.5).model_copy(

@@ -10,6 +10,7 @@ from app.api.chat import router as chat_router
 from app.api.error_handlers import (
     leave_balance_not_found_handler,
     leave_request_error_handler,
+    rag_provider_error_handler,
 )
 from app.api.leave_balance import router as leave_balance_router
 from app.api.leave_requests import router as leave_requests_router
@@ -17,6 +18,7 @@ from app.api.documents import router as documents_router
 from app.api.image_assets import router as image_assets_router
 from app.db.session import create_schema
 from app.services.errors import LeaveBalanceNotFoundError, LeaveRequestError
+from app.services.rag_provider_errors import RagProviderError, EmbeddingIndexMismatchError
 
 
 @asynccontextmanager
@@ -33,6 +35,8 @@ app.add_exception_handler(
     leave_balance_not_found_handler,
 )
 app.add_exception_handler(LeaveRequestError, leave_request_error_handler)
+app.add_exception_handler(RagProviderError, rag_provider_error_handler)
+app.add_exception_handler(EmbeddingIndexMismatchError, rag_provider_error_handler)
 app.include_router(documents_router)
 app.include_router(image_assets_router)
 app.include_router(leave_balance_router)

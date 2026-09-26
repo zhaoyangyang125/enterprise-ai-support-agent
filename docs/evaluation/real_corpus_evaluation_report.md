@@ -1,5 +1,35 @@
 # 実ファイルRAG評価レポート / 真实文件RAG评测报告
 
+> 2026-09-22 补充说明：原报告的指标仍是 Hash Embedding + 本地证据回答的历史基线，不是 Gemini 结果。现在可显式运行 `python -m app.evaluation.real_provider_suite`，它复用同样的 5 份虚构文档与 24 个问题，分别报告 Vector/Hybrid 检索、ACL／拒答、Citation 和基础回答字面事实命中。运行前须在私有终端设置 `RUN_REAL_RAG_EVALUATION=1`、`RAG_EMBEDDING_MODE=gemini`、模型及密钥；会产生外部 API 调用。本次未运行真实云端评测，因此没有新增真实模型指标。回答字面指标只检查至少一个人工核定事实字符串是否出现在回答中，不等价于真实性或完整性；同义改写需人工复核。OCR／Vision 部分仍为固定模拟输出。新模型的 Evidence Gate 阈值必须根据结果重新校准，不能直接把旧基线当生产准确率。
+
+> 2026-09-23：真实评测入口也支持 `RAG_EMBEDDING_MODE=dashscope` 与可选的 `RAG_ANSWER_MODE=qwen`。千问模式读取 `DASHSCOPE_API_KEY`，使用百炼兼容接口；仍需用户显式开启真实评测。
+
+## 2026-09-26 千问真实 Embedding 验收
+
+本次使用 `text-embedding-v4`（1024维）运行同一套5份虚构文档、60个Chunk和24个问题。为了单独评价检索，回答模式使用确定性的 `evidence`；OCR／Vision仍使用固定模拟Provider。因此，本节证明真实Embedding已经接入检索链，不代表真实OCR或生成式回答的总体准确率。
+
+| 指标 | Vector-only | Hybrid |
+|---|---:|---:|
+| Hit@1 | 0.5714 | 0.7143 |
+| Hit@K | 1.0000 | 1.0000 |
+| Recall@K | 1.0000 | 1.0000 |
+| MRR | 0.7579 | 0.8135 |
+| Source Hit Rate | 1.0000 | 1.0000 |
+
+Evidence Gate 使用真实向量原始语义分数，而不是RRF融合分数。旧阈值 `0.25` 会让两个无答案问题误通过；观察到的无关结果最高分约为 `0.347`，将本数据集候选阈值校准为 `0.36` 后，21个有答案问题、2个无答案问题和1个ACL问题全部通过：
+
+- 正确Citation：21 / 21
+- 基础回答事实检查：21 / 21
+- 无答案与ACL安全判断：3 / 3
+
+检索耗时不可直接横向解读：同一进程中的查询Embedding有单次运行缓存，Vector阶段先支付云端调用时间，随后Hybrid可能命中缓存。因此不能据此宣称Hybrid天然比Vector快。
+
+正式应用索引采用并行迁移，没有覆盖旧Hash索引：旧位置为 `chroma_data / enterprise_documents`，新位置为 `chroma_data_dashscope / enterprise_documents_text_embedding_v4_1024`。迁移了28个现有正式Chunk；这里的28个应用Chunk与评测套件临时生成的60个评测Chunk不是同一数据集。
+
+浏览器端到端验收还确认：年假余额查询返回8天；国内出差住宿费问题引用 `TravelPolicy_v1.pdf / Page 3`；精确编号 `TEST SAFETY CODE 7392` 只保留对应OCR PDF第1、2页；完全无关的“月面基地停车费”问题正确拒答。最终全量自动测试为 `197 passed, 3 skipped, 2 warnings`。
+
+本次离线复测（2026-09-22）：Vector Hit@1 0.7143、Hit@K 1.0、Recall@K 1.0、MRR 0.831、Source Hit Rate 1.0；Hybrid 分别为 0.6667、1.0、1.0、0.8056、1.0。正例 Citation 21/21；基础答案事实与已传证据的字面一致性 21/21；No-answer／ACL 3/3。以上仅为固定小型虚构数据集结果，并不代表生产环境整体精度。
+
 評価日: 2026-09-20
 
 ## 1. 目的

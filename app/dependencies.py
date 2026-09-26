@@ -26,11 +26,16 @@ from app.repositories.hybrid_repository import (
     HybridVectorRepository,
 )
 from app.services.authorization_service import AuthorizationService
-from app.services.embedding_service import HashEmbeddingProvider
+from app.services.embedding_service import EmbeddingProvider, HashEmbeddingProvider
+from app.services.gemini_rag_providers import GeminiAnswerGenerator, GeminiEmbeddingProvider
+from app.services.dashscope_rag_providers import (
+    DashScopeEmbeddingProvider,
+    QwenAnswerGenerator,
+)
 from app.services.document_service import DocumentService
 from app.services.leave_service import LeaveService
 from app.services.leave_request_service import LeaveRequestService
-from app.services.rag_service import EvidenceOnlyAnswerGenerator, RagService
+from app.services.rag_service import AnswerGenerator, EvidenceOnlyAnswerGenerator, RagService
 from app.tools.get_leave_balance_tool import GetLeaveBalanceTool
 from app.tools.create_leave_request_tool import CreateLeaveRequestTool
 from app.tools.search_document_tool import SearchDocumentTool
@@ -78,10 +83,82 @@ def get_vector_repository() -> ChromaVectorRepository:
     """创建并缓存本地持久化 Chroma Repository。 / Creates and caches the local persistent Chroma repository."""
 
     return ChromaVectorRepository.persistent(
-        path=Path("chroma_data"),
-        collection_name="enterprise_documents",
-        embedding_provider=HashEmbeddingProvider(),
+        path=Path(os.getenv("RAG_VECTOR_PATH", "chroma_data")),
+        collection_name=os.getenv(
+            "RAG_VECTOR_COLLECTION",
+            "enterprise_documents",
+        ),
+        embedding_provider=build_embedding_provider(),
     )
+
+
+def build_embedding_provider() -> EmbeddingProvider:
+    """显式选择本地或真实 Embedding；配置错误立即失败。 / Selects embedding explicitly."""
+    mode = os.getenv("RAG_EMBEDDING_MODE", "hash").strip().lower()
+    if mode == "hash":
+        return HashEmbeddingProvider()
+    dimensions = int(os.getenv("RAG_EMBEDDING_DIMENSIONS", "1024"))
+    timeout = float(os.getenv("RAG_PROVIDER_TIMEOUT_SECONDS", "30"))
+    if mode == "gemini":
+        return GeminiEmbeddingProvider(
+            api_key=os.getenv("GEMINI_API_KEY", ""),
+            model_name=os.getenv("RAG_EMBEDDING_MODEL", ""),
+            dimensions=dimensions,
+            base_url=os.getenv(
+                "RAG_PROVIDER_BASE_URL",
+                "https://generativelanguage.googleapis.com/v1beta",
+            ),
+            timeout_seconds=timeout,
+        )
+    if mode == "dashscope":
+        return DashScopeEmbeddingProvider(
+            api_key=os.getenv("DASHSCOPE_API_KEY", ""),
+            model_name=os.getenv("RAG_EMBEDDING_MODEL", ""),
+            dimensions=dimensions,
+            base_url=os.getenv(
+                "RAG_PROVIDER_BASE_URL",
+                "https://dashscope.aliyuncs.com/compatible-mode/v1",
+            ),
+            timeout_seconds=timeout,
+        )
+    raise ValueError("RAG_EMBEDDING_MODE must be hash, gemini, or dashscope")
+
+
+def build_answer_generator() -> AnswerGenerator:
+    """显式选择本地证据回答或真实 LLM；绝不静默降级。 / Selects answer mode."""
+    mode = os.getenv("RAG_ANSWER_MODE", "evidence").strip().lower()
+    if mode == "evidence":
+        return EvidenceOnlyAnswerGenerator()
+    timeout = float(os.getenv("RAG_PROVIDER_TIMEOUT_SECONDS", "30"))
+    if mode == "gemini":
+        return GeminiAnswerGenerator(
+            api_key=os.getenv("GEMINI_API_KEY", ""),
+            model_name=os.getenv("RAG_ANSWER_MODEL", ""),
+            base_url=os.getenv(
+                "RAG_PROVIDER_BASE_URL",
+                "https://generativelanguage.googleapis.com/v1beta",
+            ),
+            timeout_seconds=timeout,
+        )
+    if mode == "qwen":
+        return QwenAnswerGenerator(
+            api_key=os.getenv("DASHSCOPE_API_KEY", ""),
+            model_name=os.getenv("RAG_ANSWER_MODEL", ""),
+            base_url=os.getenv(
+                "RAG_PROVIDER_BASE_URL",
+                "https://dashscope.aliyuncs.com/compatible-mode/v1",
+            ),
+            timeout_seconds=timeout,
+        )
+    raise ValueError("RAG_ANSWER_MODE must be evidence, gemini, or qwen")
+
+
+def get_rag_minimum_score() -> float:
+    """读取 Evidence Gate 的语义分数阈值。 / Reads the semantic evidence threshold."""
+    minimum_score = float(os.getenv("RAG_MINIMUM_SCORE", "0.25"))
+    if not 0.0 <= minimum_score <= 1.0:
+        raise ValueError("RAG_MINIMUM_SCORE must be between 0 and 1")
+    return minimum_score
 
 
 def get_retrieval_repository(
@@ -103,11 +180,12 @@ def get_rag_service(
 
     access_repository = SqlAlchemyDocumentAccessRepository(session)
     authorization_service = AuthorizationService(access_repository)
-    answer_generator = EvidenceOnlyAnswerGenerator()
+    answer_generator = build_answer_generator()
     return RagService(
         authorization_service=authorization_service,
         vector_repository=vector_repository,
         answer_generator=answer_generator,
+        minimum_score=get_rag_minimum_score(),
     )
 
 

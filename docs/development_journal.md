@@ -733,3 +733,40 @@ OCR 接口和 PDF fallback 已实现，但默认上传流程尚未组装 OCR，�
 - 9 题固定小样本中，Vector-only Hit@1 为 0.8571，Hybrid 为 1.0；小样本不能冒充生产准确率。
 - 当前 BM25 每次从授权范围读取 Chunk 并在进程内计算，代码清楚且适合演示；数据量大时需要专门倒排索引。
 - 旧 `test_leave_availability_service.py` 导入不存在的 `practice` 包，是本轮之前就存在的全量收集问题，本轮没有越界修复。
+
+## 2026-09-26 — 千问真实RAG接入与正式索引迁移
+
+### 完成内容
+
+- 在保留本地Hash Embedding和Evidence回答模式的前提下，新增百炼 `text-embedding-v4` 与 `qwen-plus` Provider。
+- 密钥只从环境变量读取；厂商错误转换为安全错误，不把密钥、文档正文或原始响应返回给用户。
+- 新模型和旧Hash向量不能混用，因此使用独立的Chroma路径、Collection名称和模型／维度身份检查。
+- 非破坏性迁移脚本从旧索引读取28个正式Chunk，重新生成向量并写入新索引；旧索引和Business DB保持不变。
+- Evidence Gate依据真实语义分数判断证据是否充分，不把RRF排序分数误当成相关概率。
+- 精确编号查询会优先保留正文或可信metadata中实际包含该编号的证据，避免无关语义结果混入Citation。
+
+### 实际调用链
+
+```text
+用户问题
+-> ACL取得可读取的active文档版本
+-> DashScope Query Embedding
+-> Vector Search + BM25
+-> RRF排序与去重
+-> 精确编号证据过滤（需要时）
+-> Evidence Gate（真实语义分数，当前评测阈值0.36）
+-> Qwen只根据通过安全检查的证据生成回答
+-> 后端根据Chunk metadata生成Citation
+```
+
+### 验收结果
+
+- 24题真实Embedding评测：Hybrid Hit@1 0.7143、Hit@K 1.0、Recall@K 1.0、MRR 0.8135。
+- 21个正例、2个无答案问题和1个ACL问题全部通过最终证据判断。
+- 浏览器验证了年假余额、出差规定、OCR精确编号与无证据拒答。
+- `TEST SAFETY CODE 7392` 最终只显示OCR PDF第1、2页两个相关来源。
+- 全量测试：197 passed、3 skipped、2条第三方弃用警告。
+
+### 面试时要说明的限制
+
+这不是生产准确率。数据集只有24题，并且OCR／Vision评测仍使用固定模拟Provider；`0.36`也是针对当前模型和当前语料校准的阈值。模型、维度或语料分布改变后，都应重新建索引并重新评测阈值。

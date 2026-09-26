@@ -447,3 +447,15 @@ Day 5 已安全保存。Day 6 进行 Docker、本地交付验证、README/架构
 ## Handoff Summary
 
 三条业务主链、Document Ingestion 和本地 Chroma 已保存于本地提交。复杂文档 Day 1～Day 5 已分别提交；Day 5 的本地 UI、上传、状态和 Citation 展示已通过 65 项全量测试。尚未执行 push 或 merge，原复习目录和其中的学习文件未被本轮开发覆盖。
+
+## 2026-09-26 Real RAG Provider Update / 真实RAG更新
+
+- Current branch / 当前分支：`feature/production-rag-providers`
+- DashScope `text-embedding-v4`（1024维）和Qwen回答已通过真实调用。
+- 旧Hash索引已备份并保留；28个正式Chunk已迁移到独立的DashScope Chroma索引。
+- 真实Embedding 24题评测在 `RAG_MINIMUM_SCORE=0.36` 时通过21个正例和3个安全场景。
+- 浏览器端到端验证通过：年假8天、出差住宿费、OCR编号7392及无证据拒答。
+- 精确编号查询的Citation已收敛为真正包含编号的证据。
+- Latest verification / 最新验证：`197 passed, 3 skipped, 2 warnings`。
+- 本节记录的是工作区状态；本轮尚未执行 `git add`、`git commit` 或 `git push`。
+- `AGENTS.md`、`gemini_test.png` 是项目所有者的未跟踪文件，不属于本次提交范围。

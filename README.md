@@ -272,7 +272,54 @@ Citation的image_url指向`GET /api/documents/{document_id}/versions/{version_id
 
 1. **自动 ID 生成不一致**：某些文件名会生成以 `-` 开头的 Document ID / Version ID，但 `LocalImageAssetStorage` 的安全路径规则要求首字符为字母或数字，因而可能出现 `image_extraction_failed`。当前可手工使用如 `TEST-EXCEL-001`、`TEST-EXCEL-001-V1` 的合法 ID；本轮只记录，不修改代码。
 2. **Gemini 临时 503**：真实请求可能因 high demand 返回 503。当前单图片故障隔离会跳过失败图片，其余文字和图片继续处理；没有自动重试。
-3. **Hash Embedding**：当前 deterministic Hash Embedding 用于离线架构、权限和 RAG 链路验证，不是生产级语义 Embedding，可能出现不相关 Citation。
+3. **Hash Embedding**：默认 deterministic Hash Embedding 用于离线架构、权限和 RAG 链路验证，不是生产级语义 Embedding，可能出现不相关 Citation。现在可显式切换真实模型，但真实准确率需要单独实测。
+
+## 可选：真实 RAG Provider / Optional real RAG providers
+
+默认仍是 `RAG_EMBEDDING_MODE=hash` 与 `RAG_ANSWER_MODE=evidence`：不需要密钥、不会联网，原有测试和本地演示行为不变。真实模式支持 Gemini，也支持千问／阿里云百炼；只有显式选择时才启用。项目原有的 `EmbeddingProvider`、`AnswerGenerator` 接口及其本地实现仍保留。
+
+在当前终端设置环境变量（密钥不要写进文件、命令历史、截图或 Git）：
+
+```text
+RAG_EMBEDDING_MODE=gemini
+RAG_EMBEDDING_MODEL=gemini-embedding-001
+RAG_EMBEDDING_DIMENSIONS=768
+RAG_ANSWER_MODE=gemini
+RAG_ANSWER_MODEL=<你账户可使用的 Gemini 文本模型>
+GEMINI_API_KEY=<仅在私有终端设置>
+RAG_PROVIDER_BASE_URL=https://generativelanguage.googleapis.com/v1beta
+RAG_PROVIDER_TIMEOUT_SECONDS=30
+```
+
+千问／百炼示例（推荐先使用这一组）：
+
+```text
+RAG_EMBEDDING_MODE=dashscope
+RAG_EMBEDDING_MODEL=text-embedding-v4
+RAG_EMBEDDING_DIMENSIONS=1024
+RAG_ANSWER_MODE=qwen
+RAG_ANSWER_MODEL=qwen-plus
+DASHSCOPE_API_KEY=<仅在私有终端设置>
+RAG_PROVIDER_BASE_URL=<你的百炼业务空间兼容接口 Base URL>
+RAG_PROVIDER_TIMEOUT_SECONDS=30
+RAG_VECTOR_PATH=chroma_data_dashscope
+RAG_VECTOR_COLLECTION=enterprise_documents_text_embedding_v4_1024
+RAG_MINIMUM_SCORE=0.36
+```
+
+若暂时没有业务空间专属地址，可以使用百炼控制台为当前地域提供的兼容地址；不要盲目复制其他地域的 Base URL。代码默认兼容旧公共地址，但生产和正式评测建议使用控制台显示的业务空间专属地址。
+
+配置完成后，先设置 `RUN_REAL_RAG_SMOKE_TEST=1` 并运行 `python -m scripts.check_real_rag_provider`。它只调用一次 Embedding 和一次回答生成，不写入 Chroma 或数据库。确认成功后才运行完整真实评测。
+
+`RAG_MINIMUM_SCORE` 是送入回答模型前的语义 Evidence Gate，不是 RRF 分数。默认 `0.25` 保持旧 Hash 行为。2026-09-26 使用 `text-embedding-v4` 对当前5份虚构文档／24题数据集完成校准：旧阈值会让两个无答案问题误通过，无关证据最高分约为 `0.347`；改用 `0.36` 后，21个正例、2个无答案问题和1个ACL问题全部通过。因此 `0.36` 是当前模型和当前语料的已验证配置，不是可直接套用到其他项目的通用阈值。
+
+`RAG_EMBEDDING_MODE` 和 `RAG_ANSWER_MODE` 可以单独切换。使用真实 Embedding 时，不能直接复用旧 Hash 向量。`RAG_VECTOR_PATH` 和 `RAG_VECTOR_COLLECTION` 用于建立并行索引；千问示例不会覆盖默认的 `chroma_data / enterprise_documents`。现有 Chroma collection 非空且模型／维度不一致会明确拒绝启动该 Repository。模型版本或维度变化也需要重建索引。配置错误或厂商失败不会静默退回 Hash；API 返回不含密钥、文档或厂商原始响应的安全错误。
+
+本项目已通过 `python -m scripts.reindex_vector_collection` 将旧索引中的28个正式Chunk非破坏性迁移到 `chroma_data_dashscope / enterprise_documents_text_embedding_v4_1024`；旧Hash索引仍然保留。迁移必须显式设置 `RUN_VECTOR_REINDEX=1`，不会修改Business DB。迁移前请先备份 `business.db`、`chroma_data` 和 `document_storage`。
+
+真实 LLM 只接收 ACL 过滤且 Evidence Gate 判定充分的片段。无权限或无足够证据时不调用 LLM。回答提示要求只依据证据、跟随中日文提问语言、不要臆造公司规则；Citation 仍由后端 Chunk metadata 生成，不采纳模型自己写出的来源。但提示不能绝对保证模型不幻觉，所以正式环境仍需人工抽检及更严格的回答评测。
+
+显式运行同一套 5 份虚构文档／24 题真实 Embedding 评测：在私有终端设 `RUN_REAL_RAG_EVALUATION=1` 和上述真实 Embedding 配置后运行 `python -m app.evaluation.real_provider_suite`。这会调用付费／限额 API，默认不会运行。若同时启用真实回答模型，报告还会给出基础回答字面事实命中数；同义改写可能被误判，必须人工复核。OCR/Vision 评测仍使用确定性模拟 Provider，不把这份报告说成端到端云端准确率。比较原来的 Hash 基线请运行 `python -m scripts.run_corpus_evaluation`。
 4. **EvidenceOnly Answer Generator**：当前直接返回最高相关 Evidence Chunk，不会进一步生成精炼答案。例如询问最大速度时可能返回整段 OCR 文本，这不是 OCR 识别失败。
 5. **Windows pytest 临时目录权限**：本机默认目录 `C:\Users\zyy\AppData\Local\Temp\pytest-of-zyy` 和 `.pytest_cache` 出现 WinError 5。使用此前不存在的新目录，例如 `--basetemp=.\.pytest_tmp_run1`，可完成 146 passed、2 skipped；这是当前开发机环境问题，不是业务代码失败。
 6. **Mock 身份**：`X-User-Id`、`X-Department-Id`、`X-Role-Ids` 仍是开发用身份上下文，不是生产认证。浏览器已经取得的图片不能通过后端撤回，但后续请求会重新检查权限。

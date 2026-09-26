@@ -1,3 +1,4 @@
+import re
 from typing import Protocol
 from urllib.parse import quote
 
@@ -89,7 +90,17 @@ class RagService:
             limit=self._retrieval_limit,
             metadata_filter=metadata_filter,
         )
-        evidence = self._select_sufficient_evidence(retrieved)
+        # Repository 已在检索时过滤；这里再防御性检查，避免错误实现泄漏给 LLM。
+        # Retrieval filters first; this final check protects the LLM boundary.
+        authorized_chunks: list[RetrievedChunk] = []
+        for chunk in retrieved:
+            if chunk.document_version_id in allowed_version_ids:
+                authorized_chunks.append(chunk)
+        identifier_chunks = self._prefer_exact_identifier_chunks(
+            query,
+            authorized_chunks,
+        )
+        evidence = self._select_sufficient_evidence(identifier_chunks)
         if not evidence:
             return self._no_evidence()
 
@@ -98,6 +109,43 @@ class RagService:
             evidence_found=True,
             sources=self._build_citations(evidence),
         )
+
+    @staticmethod
+    def _prefer_exact_identifier_chunks(
+        query: str,
+        chunks: list[RetrievedChunk],
+    ) -> list[RetrievedChunk]:
+        """编号问题优先保留正文或定位metadata中含编号的证据。 / Prefers exact identifiers."""
+        identifiers = re.findall(
+            r"(?i)(?<![A-Z0-9_])(?:[A-Z][A-Z0-9_:-]*\d[A-Z0-9_:-]*|\d{3,})(?![A-Z0-9_])",
+            query,
+        )
+        if not identifiers:
+            return chunks
+
+        matching_chunks: list[RetrievedChunk] = []
+        for chunk in chunks:
+            searchable_values = [
+                chunk.content,
+                chunk.source_name,
+                chunk.sheet or "",
+                chunk.cell_range or "",
+                chunk.section or "",
+            ]
+            searchable_text = " ".join(searchable_values).casefold()
+            contains_all = True
+            for identifier in identifiers:
+                if identifier.casefold() not in searchable_text:
+                    contains_all = False
+                    break
+            if contains_all:
+                matching_chunks.append(chunk)
+
+        # 若Parser或metadata没有保存标识，保留原结果，避免误拒答。
+        # Falls back when no stored chunk contains every identifier.
+        if matching_chunks:
+            return matching_chunks
+        return chunks
 
     def _select_sufficient_evidence(
         self,

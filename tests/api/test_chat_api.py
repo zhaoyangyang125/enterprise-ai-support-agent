@@ -40,8 +40,9 @@ class FakeAgentRouter:
 
 @pytest.fixture(autouse=True)
 def clear_dependency_overrides() -> Iterator[None]:
-    """在每个 Chat API 测试后清除依赖替换。 / Clears dependency overrides after every Chat API test."""
+    """默认隔离真实Agent/Chroma，并在测试后清理。 / Isolates real Agent and Chroma."""
 
+    app.dependency_overrides[get_agent_router] = FakeAgentRouter
     try:
         yield
     finally:

@@ -13,6 +13,18 @@ from app.services.errors import (
     PendingLeaveActionExpiredError,
     PendingLeaveActionNotFoundError,
 )
+from app.services.rag_provider_errors import RagProviderError, EmbeddingIndexMismatchError
+
+
+async def rag_provider_error_handler(
+    _request: Request,
+    _exc: RagProviderError | EmbeddingIndexMismatchError,
+) -> JSONResponse:
+    """屏蔽厂商响应与密钥，返回安全的服务不可用提示。 / Hides provider details."""
+    return JSONResponse(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        content={"detail": "RAG provider is unavailable or its index needs reindexing."},
+    )
 
 
 async def leave_balance_not_found_handler(
