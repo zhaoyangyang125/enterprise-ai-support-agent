@@ -329,6 +329,21 @@ RAG_MINIMUM_SCORE=0.36
 - `docs/phase4_progress.md`: current implementation, verification, and Git status.
 - `docs/interview_notes.md`: concise explanation and interview follow-up questions.
 
+## AWS EC2验收部署（2026-09-26）
+
+这是私有EC2验收环境，不是公开网站。Docker容器仅绑定`127.0.0.1:8000`，本机浏览器通过SSH端口转发访问。
+
+- 区域：`ap-northeast-1`
+- 镜像／容器：`enterprise-ai-support-agent:aws-v1` / `enterprise-ai-support-agent`
+- 密钥：EC2实例角色从SSM `/enterprise-ai-support-agent/prod/dashscope-api-key`读取；不得写入文件、截图或Git
+- 数据：`business.db`、`document_storage`和`chroma_data_dashscope`通过bind mount持久化，不进入镜像
+- RAG：`text-embedding-v4`（1024维）、`qwen-plus`、collection `enterprise_documents_text_embedding_v4_1024`、Evidence Gate `0.36`
+- 日志：CloudWatch `/enterprise-ai-support-agent/prod`，保留7天
+
+验收已确认：首页和年假余额接口返回HTTP 200；`U001`剩余8.0天；“现代跨海桥梁”查询回答“多跨斜拉桥设计”；Citation命中`TEST-EXCEL-001-V1 / Sheet1 / C67:N88`，原图返回798×406 PNG；CloudWatch收到启动和请求日志。验收未运行数据库seed，也未覆盖恢复索引。
+
+当前身份请求头仍是开发用模拟认证，不能直接向公网开放。演示结束后关闭SSH隧道并停止EC2。停止后计算费用停止，但EBS、S3、CloudWatch Logs及适用的Parameter Store功能仍可能计费；不要终止实例或删除EBS卷，除非确认不再需要恢复数据。
+
 ## Roadmap
 
 1. Add Docker and perform the final local delivery audit.

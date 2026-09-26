@@ -21,3 +21,6 @@ secrets/
 *service_account*.json
 *-key.json
 practice/
+
+# Local deployment evidence
+deployment-acceptance.log

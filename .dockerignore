@@ -1,0 +1,15 @@
+# Only include application source and installation metadata
+**
+!pyproject.toml
+!app/
+!app/**
+!scripts/
+!scripts/**
+
+# Exclude local caches and secret files even inside source directories
+**/__pycache__/
+**/*.pyc
+**/.env
+**/.env.*
+**/*.pem
+**/*.key
