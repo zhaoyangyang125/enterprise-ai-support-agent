@@ -1,6 +1,34 @@
 from app.repositories.vector_repository import ChromaVectorRepository
 from app.schemas.rag import IndexedChunk, RetrievalFilter
 from app.services.embedding_service import HashEmbeddingProvider
+from app.services.rag_provider_errors import EmbeddingIndexMismatchError
+import pytest
+
+
+class NamedEmbedding:
+    """以固定向量模拟不同真实模型。 / Simulates named real embedding models."""
+
+    def __init__(self, identity: str) -> None:
+        self.index_identity = identity
+
+    def embed(self, texts: list[str]) -> list[list[float]]:
+        return [[1.0] * 8 for text in texts]
+
+
+def test_real_embedding_rejects_legacy_and_different_model_indexes(tmp_path) -> None:
+    path = tmp_path / "chroma"
+    old = ChromaVectorRepository.persistent(path, "documents", HashEmbeddingProvider())
+    old.upsert_chunks([make_chunk("V1", "old vector", 1)])
+    with pytest.raises(EmbeddingIndexMismatchError):
+        ChromaVectorRepository.persistent(path, "documents", NamedEmbedding("gemini:model-a:8"))
+
+    fresh = ChromaVectorRepository.persistent(path, "real_documents", NamedEmbedding("gemini:model-a:8"))
+    fresh.upsert_chunks([make_chunk("V1", "real vector", 1)])
+    ChromaVectorRepository.persistent(path, "real_documents", NamedEmbedding("gemini:model-a:8"))
+    with pytest.raises(EmbeddingIndexMismatchError):
+        ChromaVectorRepository.persistent(path, "real_documents", NamedEmbedding("gemini:model-b:8"))
+    with pytest.raises(EmbeddingIndexMismatchError):
+        ChromaVectorRepository.persistent(path, "real_documents", HashEmbeddingProvider())
 
 
 def make_chunk(version_id: str, content: str, page: int) -> IndexedChunk:
@@ -60,6 +88,35 @@ def test_chroma_persistent_client_loads_index_on_restart(tmp_path) -> None:
 
     assert len(result) == 1
     assert result[0].document_version_id == "DOC-V1"
+
+
+def test_chroma_lists_all_chunks_for_controlled_reindex(tmp_path) -> None:
+    """迁移入口完整保留正文与Citation metadata。 / Preserves chunk data for reindexing."""
+    repository = ChromaVectorRepository.persistent(
+        tmp_path / "chroma",
+        "documents",
+        HashEmbeddingProvider(dimensions=64),
+    )
+    repository.upsert_chunks([
+        make_chunk("PDF-V1", "PDF content", 3),
+        IndexedChunk(
+            chunk_id="XLSX-1",
+            document_id="XLSX",
+            document_version_id="XLSX-V1",
+            content="Excel content",
+            source_name="spec.xlsx",
+            content_type="table",
+            sheet="Sheet1",
+            cell_range="A1:C4",
+        ),
+    ])
+
+    chunks = repository.list_all_chunks()
+
+    assert {chunk.chunk_id for chunk in chunks} == {"CHUNK-PDF-V1", "XLSX-1"}
+    excel = next(chunk for chunk in chunks if chunk.chunk_id == "XLSX-1")
+    assert excel.sheet == "Sheet1"
+    assert excel.cell_range == "A1:C4"
 
 
 def test_chroma_round_trips_structured_excel_citation_metadata(tmp_path) -> None:

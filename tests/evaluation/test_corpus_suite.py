@@ -17,3 +17,6 @@ def test_real_file_corpus_runs_without_cloud_credentials() -> None:
     assert report["dataset"]["chunk_count"] > 0
     assert report["safety"]["passed"] == 3
     assert report["safety"]["total"] == 3
+    assert report["answer_quality"]["total"] == 21
+    assert report["answer_quality"]["basic_grounded_hits"] == 21
+    assert report["dataset"]["embedding_mode"] == "local-hash"

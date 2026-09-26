@@ -19,12 +19,12 @@ from app.repositories.document_access_repository import SqlAlchemyDocumentAccess
 from app.repositories.document_repository import SqlAlchemyDocumentRepository
 from app.repositories.hybrid_repository import ChromaKeywordRepository, HybridVectorRepository
 from app.repositories.vector_repository import ChromaVectorRepository
-from app.schemas.rag import IndexedChunk
+from app.schemas.rag import IndexedChunk, RetrievedChunk
 from app.services.authorization_service import AuthorizationService
 from app.services.document_service import DocumentService
-from app.services.embedding_service import HashEmbeddingProvider
+from app.services.embedding_service import EmbeddingProvider, HashEmbeddingProvider
 from app.services.ocr_service import FakeOcrProvider, OcrResult
-from app.services.rag_service import EvidenceOnlyAnswerGenerator, RagService
+from app.services.rag_service import AnswerGenerator, EvidenceOnlyAnswerGenerator, RagService
 from app.services.vision_service import VisionDescription, VisionResult
 
 
@@ -102,6 +102,18 @@ class FixedVisionProvider:
                 image_type="screenshot",
             ),
         )
+
+
+class CapturingAnswerGenerator:
+    """记录每次送给回答器的证据，供确定性 grounding 检查。 / Captures supplied evidence."""
+
+    def __init__(self, delegate: AnswerGenerator) -> None:
+        self._delegate = delegate
+        self.last_evidence: list[RetrievedChunk] = []
+
+    def generate(self, query: str, evidence: list[RetrievedChunk]) -> str:
+        self.last_evidence = list(evidence)
+        return self._delegate.generate(query, evidence)
 
 
 def _fixed_ocr_provider() -> FakeOcrProvider:
@@ -193,10 +205,15 @@ def _report_values(report: Any) -> dict[str, Any]:
 
 def run_corpus_evaluation(
     samples_directory: Path | str = Path("samples"),
+    embedding_provider: EmbeddingProvider | None = None,
+    answer_generator: AnswerGenerator | None = None,
+    minimum_score: float = 0.25,
 ) -> dict[str, Any]:
     """Ingest five real files and evaluate retrieval, refusal, ACL, and citations."""
 
     samples_path = Path(samples_directory)
+    selected_embedding = embedding_provider or HashEmbeddingProvider()
+    selected_answer = answer_generator or EvidenceOnlyAnswerGenerator()
     with TemporaryDirectory(ignore_cleanup_errors=True) as temporary_directory:
         temp = Path(temporary_directory)
         engine = create_engine("sqlite+pysqlite:///:memory:")
@@ -204,7 +221,7 @@ def run_corpus_evaluation(
         vector = ChromaVectorRepository.persistent(
             path=temp / "chroma",
             collection_name="corpus_evaluation",
-            embedding_provider=HashEmbeddingProvider(),
+            embedding_provider=selected_embedding,
         )
         hybrid = HybridVectorRepository(vector, ChromaKeywordRepository(vector))
         registry = DocumentParserRegistry(
@@ -238,15 +255,18 @@ def run_corpus_evaluation(
             comparison = compare_retrieval(vector, hybrid, cases)
 
             authorization = AuthorizationService(SqlAlchemyDocumentAccessRepository(session))
+            capturing_answer = CapturingAnswerGenerator(selected_answer)
             rag_service = RagService(
                 authorization,
                 hybrid,
-                EvidenceOnlyAnswerGenerator(),
+                capturing_answer,
+                minimum_score=minimum_score,
             )
             authorized_user = CurrentUser(user_id="U001")
             unauthorized_user = CurrentUser(user_id="U999")
             answer_items: list[dict[str, Any]] = []
             for expected in POSITIVE_EXPECTATIONS:
+                capturing_answer.last_evidence = []
                 answer = rag_service.answer(expected.query, authorized_user)
                 source_hit = False
                 for source in answer.sources:
@@ -260,11 +280,24 @@ def run_corpus_evaluation(
                         continue
                     source_hit = True
                     break
+                fact_in_answer = False
+                fact_in_supplied_evidence = False
+                for value in expected.required_text:
+                    if value in answer.answer:
+                        fact_in_answer = True
+                    for supplied_chunk in capturing_answer.last_evidence:
+                        if value in supplied_chunk.content:
+                            fact_in_supplied_evidence = True
                 answer_items.append(
                     {
                         "case_id": expected.case_id,
                         "evidence_found": answer.evidence_found,
                         "source_hit": source_hit,
+                        # 严格字面检查是可复现的基础指标；LLM 同义改写需要人工复核。
+                        # Literal fact matching is reproducible but misses paraphrases.
+                        "required_fact_in_answer": fact_in_answer,
+                        "required_fact_in_supplied_evidence": fact_in_supplied_evidence,
+                        "basic_grounded_check": fact_in_answer and fact_in_supplied_evidence,
                     }
                 )
             safety_queries = (
@@ -306,6 +339,9 @@ def run_corpus_evaluation(
                 "chunk_count": len(chunks),
                 "ingestion_counts": ingestion_counts,
                 "provider_scope": "real local parsers and Chroma; deterministic fake OCR/Vision",
+                "embedding_mode": getattr(selected_embedding, "index_identity", "local-hash"),
+                "answer_mode": type(selected_answer).__name__,
+                "minimum_score": minimum_score,
             },
             "vector": _report_values(comparison.vector),
             "hybrid": _report_values(comparison.hybrid),
@@ -319,6 +355,20 @@ def run_corpus_evaluation(
                     item["case_id"]
                     for item in answer_items
                     if not item["source_hit"]
+                ],
+            },
+            "answer_quality": {
+                "method": "literal fact in answer AND in evidence actually supplied to generator; paraphrases and other claims need manual review",
+                "required_fact_hits": sum(
+                    1 for item in answer_items if item["required_fact_in_answer"]
+                ),
+                "total": len(answer_items),
+                "basic_grounded_hits": sum(
+                    1 for item in answer_items if item["basic_grounded_check"]
+                ),
+                "failed_cases": [
+                    item["case_id"] for item in answer_items
+                    if not item["required_fact_in_answer"]
                 ],
             },
             "safety": {

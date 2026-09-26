@@ -2,12 +2,14 @@ __pycache__/
 *.py[cod]
 .pytest_cache/
 .pytest_tmp/
+.pytest_tmp*/
+pytest_*/
 .venv/
 business.db
 build/
 dist/
 *.egg-info/
-chroma_data/
+chroma_data*/
 document_storage/
 .env
 .env.*
