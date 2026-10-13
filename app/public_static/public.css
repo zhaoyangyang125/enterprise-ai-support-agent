@@ -1,0 +1,8 @@
+main { max-width: 1120px; margin: 28px auto; padding: 0 20px; }
+.chat-panel { min-height: 610px; }
+.identity-copy { max-width: 960px; }
+@media (max-width: 640px) {
+  main { margin: 16px auto; padding: 0 12px; }
+  .panel-header { flex-wrap: wrap; }
+  .chat-feed { max-height: 640px; }
+}

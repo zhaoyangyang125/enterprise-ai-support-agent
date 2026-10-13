@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="description" content="権限制御付きRAGと業務データ照会の公開デモ" />
+  <title>Enterprise AI Support Agent · 公開デモ</title>
+  <link rel="stylesheet" href="/static/styles.css" />
+  <link rel="stylesheet" href="/static/public.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand"><div class="brand-mark" aria-hidden="true">EA</div>
+      <div><p class="eyebrow">ENTERPRISE KNOWLEDGE WORKSPACE</p><h1>AI Support Agent</h1></div>
+    </div>
+    <div class="runtime-badge"><span class="status-dot" aria-hidden="true"></span>公開デモ · 読み取り専用</div>
+  </header>
+  <section class="identity-bar" aria-label="公開デモについて">
+    <div class="identity-copy"><strong>架空データを使用した公開デモです</strong>
+      <span>ログイン不要。架空の営業社員の閲覧権限で、社内規定と有給休暇の残日数を照会できます。</span>
+    </div>
+  </section>
+  <main>
+    <section class="panel chat-panel" aria-labelledby="chat-title">
+      <div class="panel-header"><div><p class="section-kicker">AUTHORIZED ASSISTANT</p>
+        <h2 id="chat-title">社内規定・業務データの照会</h2></div><span class="security-chip">検索前の権限チェック</span>
+      </div>
+      <div id="chat-feed" class="chat-feed" aria-live="polite">
+        <article class="message assistant-message"><div class="message-label">Assistant</div>
+          <p>社内規定への質問には根拠と出典を表示します。有給休暇の残日数は架空の業務データから照会します。</p>
+        </article>
+      </div>
+      <p class="demo-note">個人情報や機密情報を入力しないでください。現在は外部LLMを呼び出さず、検索した資料の証拠文を回答します。利用回数には上限があります。</p>
+      <div class="quick-prompts" aria-label="質問例">
+        <button type="button" data-prompt="国内出張の宿泊費上限はいくらですか？">宿泊費の上限</button>
+        <button type="button" data-prompt="国内出張の宿泊費上限の出典を教えてください。">規定の出典</button>
+        <button type="button" data-prompt="私の有給休暇はあと何日ありますか？">有給残日数</button>
+      </div>
+      <form id="chat-form" class="composer">
+        <label class="message-input-label" for="message">質問を入力（最大500文字）</label>
+        <div class="composer-row"><textarea id="message" rows="3" maxlength="500" required
+          placeholder="例：国内出張の宿泊費上限はいくらですか？"></textarea>
+          <button id="send-button" class="primary-button" type="submit"><span>送信</span><small>Send</small></button>
+        </div>
+      </form>
+    </section>
+  </main>
+  <footer><span>Python · FastAPI · Chroma · 権限制御付きRAG</span><span>架空データ · 読み取り専用</span></footer>
+  <script src="/static/public.js" defer></script>
+</body>
+</html>
