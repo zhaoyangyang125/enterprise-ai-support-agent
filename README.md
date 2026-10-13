@@ -1,354 +1,111 @@
 # Enterprise AI Support Agent
 
-## プロジェクト概要
+社内文書の検索・根拠確認と、本人の有給休暇残日数照会・申請を扱う、Python / FastAPI製の生成AIアプリケーションです。社内情報の探しにくさに対して、アクセス権限に応じた検索と出典表示を組み合わせています。
 
-Enterprise AI Support Agentは、社内業務データと社内文書を安全に扱うことを目的とした、Python / FastAPIベースの学習用生成AIアプリケーションです。
+日本のAI / LLMアプリケーションエンジニア職に向けた個人開発作品です。**架空データによる検証用システム**であり、AWS EC2上でDockerによる私有環境のデプロイ・動作確認を行っています。公開運用中のSaaSではありません。
 
-主な機能は、本人の有給休暇残日数照会、安全な有給休暇申請、権限制御付きRAG、PDF / Excel解析、OCR / Vision画像証拠、Vector Search + BM25 + RRFによるHybrid Searchです。
+## 実装した機能
 
-文書検索では、LLMにアクセス権限を判断させません。Business DBから取得したACLと有効な文書バージョンを検索前に適用し、十分な根拠がない場合は回答を生成しないEvidence Gateを実装しています。CitationはLLMが作成するのではなく、保存済みのpage、Sheet、Cell Range、image metadataから生成します。
+| 領域 | 実装内容 |
+|---|---|
+| API・業務データ | Python、FastAPI、Pydantic、SQLAlchemy、SQLite。本人の有給休暇残日数を照会 |
+| 権限制御付きRAG | Business DBのACL・有効な文書バージョンを**検索前**に適用。ChromaのVector SearchとBM25をRRFで統合 |
+| 根拠と出典 | Evidence Gateで根拠不足時に回答を抑止。Citationは保存済みmetadataから生成（PDFページ、Excel Sheet / Cell Range、画像） |
+| 文書取り込み | PDF / Excel Parser、管理者向けアップロード、文書バージョン管理、Google Cloud Vision OCR、Gemini Vision、権限付き原画像表示 |
+| 実モデル接続 | DashScopeのtext-embedding-v4、Qwen回答生成。Gemini用Providerも実装。標準設定はオフラインのHash Embedding / EvidenceOnly回答 |
+| Agent / Tool Calling | **ルール型Router**が残日数照会・文書検索の読み取りToolを選択。完全自律型のLLM Agentではない |
+| 安全な申請 | Prepareでプレビューと確認tokenを発行。Confirmで再検証・残日数予約・申請作成・token消費を同一transactionで実行。冪等キーによる再送対策 |
+| 配置・運用検証 | Docker / AWS EC2、S3によるデータ退避・復元、SSMによる秘密情報取得、CloudWatch Logsへのログ転送 |
 
-```text
-CurrentUser + Query
--> Authentication / Authorization
--> Retrieval-time ACL Filter
--> Vector Search + BM25
--> Reciprocal Rank Fusion
--> Evidence Sufficiency Gate
--> Answer + Metadata Citation
+**認証はMock Authenticationです。** `X-User-Id`等の自己申告Headerを使用しており、JWT等の本番認証は未実装です。ACL検証は実装していますが、このままインターネット公開する構成ではありません。自然言語チャットから申請を書き込む会話制御は未実装で、申請は専用APIを使用します。
+
+## システム構成
+
+```mermaid
+flowchart TD
+    UI["Demo UI / API"] --> API["FastAPI・Mock identity"]
+    API --> Router["ルール型 Agent Router"]
+    Router --> Leave["本人の残日数照会 Tool"]
+    Leave --> DB["Business DB / SQLite"]
+    Router --> ACL["ACL・有効版の検索前フィルタ"]
+    DB --> ACL
+    ACL --> Vector["Chroma / Vector Search"]
+    ACL --> Keyword["BM25 / 許可済み候補"]
+    Vector --> RRF["RRF"]
+    Keyword --> RRF
+    RRF --> Gate["Evidence Gate"]
+    Gate --> Answer["Qwen等 / EvidenceOnly + metadata Citation"]
+    API --> Prepare["申請 Prepare → 明示 Confirm"]
+    Prepare --> DB
+    Upload["管理者 PDF / Excel Upload"] --> Parse["Parser / OCR / Gemini Vision"]
+    Parse --> Vector
+    Parse --> DB
 ```
 
-### 主な技術
+EC2ではDockerのホスト側ポートを`127.0.0.1:8000`に限定し、SSHポート転送で閲覧します。SSMは設定・秘密情報、S3は退避データ、CloudWatchはログに使用します（文書検索をS3に直接実行する構成ではありません）。
 
-- Python 3.12、FastAPI、Pydantic、SQLAlchemy、SQLite
-- Chroma、Hash Embedding、BM25、Reciprocal Rank Fusion
-- PDF / Excel Parser、Google Cloud Vision OCR、Gemini Vision
-- pytest、Docker、Git feature branch / Pull Request
+## 検索評価
 
-### 実ファイル評価
+5つの架空PDF / Excel、60 Chunk、24問（回答可能21問・回答不能2問・ACL拒否1問）を使用。Top-Kは5です。以下は保存済みレポートの結果であり、今回の変更で外部API評価を再実行した値ではありません。
 
-完全に架空のPDF / Excel 5ファイルを実際のParserとChromaに通し、60個のChunkを作成しました。Golden Datasetは24問で、21問には人手で確認したファイル、ページ、またはSheet / Cell Rangeの正解情報があります。残りは回答不能2問とACL拒否1問です。
+| Embedding・評価日 | 検索方式 | Hit@1 | Hit@5 | Recall@5 | MRR | Source Hit Rate |
+|---|---|---:|---:|---:|---:|---:|
+| Hash（2026-09-22） | Vector | 0.7143 | 1.0000 | 1.0000 | 0.8310 | 1.0000 |
+| Hash（2026-09-22） | Hybrid | 0.6667 | 1.0000 | 1.0000 | 0.8056 | 1.0000 |
+| text-embedding-v4 / 1024次元（2026-09-26） | Vector | 0.5714 | 1.0000 | 1.0000 | 0.7579 | 1.0000 |
+| text-embedding-v4 / 1024次元（2026-09-26） | Hybrid | 0.7143 | 1.0000 | 1.0000 | 0.8135 | 1.0000 |
 
-| 指标 | Vector-only | Hybrid |
-|---|---:|---:|
-| Hit@1 | 0.7143 | 0.6667 |
-| Hit@5 / Recall@5 | 1.0000 | 1.0000 |
-| MRR | 0.8310 | 0.8056 |
-| Source Hit Rate | 1.0000 | 1.0000 |
+両評価のCitationは21/21、回答不能・ACL判断は3/3。回答モードは決定的な`evidence`、OCR / Visionは固定の模擬Providerです。**生成回答やクラウドOCRの総合精度を示す値ではありません。** 小規模な固定データセットであり、Hybridが常に優位という結果でもありません。
 
-回答可能な21問はすべて正しいCitationを返し、回答拒否 / ACLの3ケースもすべて合格しました。一方、この実ファイルセットではHybridのHit@1がVector-onlyを上回らなかったため、小規模な結果を本番精度として誇張していません。評価方法、失敗分析、制約は [`docs/evaluation/real_corpus_evaluation_report.md`](docs/evaluation/real_corpus_evaluation_report.md) に記録しています。
+実EmbeddingのEvidence Gate閾値`0.36`はこのモデル・語料で校正した値です。RRF順位スコアとは異なり、他のデータへの適用には再評価が必要です。[評価方法・制約・実モデル結果](docs/evaluation/real_corpus_evaluation_report.md)
 
-最新の回帰テスト結果はBackend `169 passed / 3 skipped`、Frontend `4 passed / 0 failed`です。Skipには明示実行が必要なクラウドliveテストが含まれます。
+## Demoの起動と質問例
 
-評価の実行：
-
-```powershell
-python -m scripts.run_corpus_evaluation
-```
-
-## 可选图片理解（Phase 6）
-
-默认只解析原生文字。需要Excel图片理解时，在启动服务的终端设置 `DOCUMENT_IMAGE_MODE=vision`、`GEMINI_API_KEY` 和 `GEMINI_VISION_MODEL`，然后重新启动。密钥不要写入代码或提交到Git。模型名使用你的Gemini账户可用且支持图片和结构化输出的模型。
-
-开启后，上传会把提取出的图片发送给Gemini，可能产生费用；请使用虚构或已获准的资料。已有索引不会自动更新，需要上传新版本。图片不足32像素宽/高会跳过，单图失败记录警告，其余可用内容仍正常索引；整份文档无可用内容则失败。图片 Citation URL、受权限保护的图片 API、前端原图展示以及身份切换清理均已实现并完成真实浏览器验收。
-
-PDF扫描页OCR现在可通过 `DOCUMENT_OCR_MODE=google` 接入Google Cloud Vision；单独开启Gemini Vision不会识别扫描PDF。默认测试不调用云端，两个live测试均需显式开启。详见下方真实Provider配置。
-
-Enterprise AI Support Agent is a Python/FastAPI project that demonstrates secure business-data access, authorized RAG, Agent Tool Calling, and safe business workflows.
-
-这是一个使用 Python/FastAPI 开发的企业 AI 支持系统练习项目，包含受控业务数据访问、权限过滤 RAG、Agent Tool Calling、安全写入流程和复杂文档解析。
-
-The project currently contains an authenticated leave-balance slice, Authorized RAG, and a local Chat/Agent/Tool path.
-
-## Current Feature
-
-```text
-X-User-Id
--> CurrentUser
--> GET /api/me/leave-balance
--> LeaveService
--> LeaveRepository
--> SQLAlchemy
--> SQLite
-```
-
-Successful response:
-
-```json
-{
-  "remaining_days": 8.0,
-  "unit": "day"
-}
-```
-
-The API does not accept a target `user_id`. The query target always comes from the authenticated `CurrentUser`. A missing balance record is different from a real zero balance and is returned as HTTP 404.
-
-## Technology
-
-- Python 3.12
-- FastAPI
-- Pydantic
-- SQLAlchemy 2.x
-- SQLite for local development
-- pytest
-- Chroma 1.5 local persistent vector database
-- pypdf and openpyxl for local document parsing
-
-## Authorized RAG Core
-
-```text
-CurrentUser + Query
--> AuthorizationService
--> Business DB permission + active-version lookup
--> allowed document-version IDs
--> RagService
--> retrieval-time ACL + metadata filter
--> Chroma Vector Search + BM25 Keyword Search
--> Reciprocal Rank Fusion (RRF)
--> evidence threshold
--> Answer Generator
--> metadata-based Source Citation
-```
-
-The local implementation does not require a paid LLM or embedding API. The runtime uses local persistent Chroma with deterministic Hash Embedding. The Hash implementation is intentionally offline and replaceable; it is not presented as a production-quality semantic model.
-
-查询端现在使用真正的 Hybrid Search：向量检索负责语义相近内容，BM25 负责编号、型号、Sheet 和 Cell Range 等精确字符串，RRF 根据两路排名进行融合和去重。两条检索链都只接收已授权且符合 metadata filter 的 Chunk，融合后还会再次检查安全范围。文档写入流程仍只写入原有 Chroma，不建立第二套文档索引。
-
-固定的9题内存回归集用于快速检查算法。另有24题真实文件评测集负责验证PDF/Excel解析、OCR/Vision边界、Chroma、权限、拒答和Citation。两组结果都只代表固定虚构样本，不能当作生产准确率。
-
-## Local Setup (PowerShell)
+新しいローカル検証環境で実行します。seedは残日数を8日にリセットするため、既存のEC2データに対して実行しないでください。
 
 ```powershell
 py -3.12 -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install -e ".[test]"
 python -m app.db.seed
-python -m uvicorn app.main:app --reload
+python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
 ```
 
-Open Swagger UI at `http://127.0.0.1:8000/docs`, call `GET /api/me/leave-balance`, and provide `X-User-Id: U001`.
+[Demo UI](http://127.0.0.1:8000/) / [Swagger UI](http://127.0.0.1:8000/docs)を開き、User IDを`U001`に設定します。入力欄近くの「質問例」はクリックで入力され、**送信ボタンを押すまで問い合わせません**。標準seedで検証できる例：
 
-## 本地演示界面 / Local Demo UI
+| 質問 | 確認できる内容 |
+|---|---|
+| 有給残日数を教えてください。 | 本人の残日数8日（申請後は変化） |
+| 国内出張の宿泊費上限はいくらですか？ | 1泊10,000円、TravelPolicy_v1.pdf / Page 3 |
+| 国内出張の宿泊費上限の出典を教えてください。 | 同じ規定のCitation |
 
-启动应用后打开 `http://127.0.0.1:8000/`。页面可以：
+`U999 / D-OTHER / EMPLOYEE`に切り替え、宿泊費を再質問するとseed文書の読み取り権限がないため根拠なしになります。画像付きCitationにはOCR / Visionで取り込んだ別の文書が必要です。オフライン画像確認は`python -m scripts.image_acceptance_demo`で起動し、「虚构导航画面保持显示」を質問します。この入口のVision出力は模擬です。
 
-- 设置开发阶段的 User ID、Department 和 Roles。
-- 查询年假余额或公司文档。
-- 按内容类型或 Excel Sheet 缩小检索范围。
-- 以 ADMIN 身份上传不超过 10 MB 的 PDF/XLSX。
-- 查看文档版本状态、结构化 Citation 和受权限保护的原始图片。
+申請はSwaggerで`POST /api/me/leave-requests/prepare`に開始日・終了日を渡し、プレビューを確認後、`POST /api/me/leave-requests`へ`confirmation_token`・`confirmed: true`と`Idempotency-Key`を送ります。[安全な書き込みの設計](docs/03_detailed_design.md)
 
-上传测试时可使用 `X-Role-Ids: EMPLOYEE,ADMIN`。当前认证仍是本地 Mock，不能作为生产登录方案。
+実モデル・OCR設定、明示的なliveテスト、SSHによる私有AWS検証の詳細は[設定・検証記録](docs/implementation_history.md)を参照してください。鍵は環境変数等で設定し、Gitに保存しません。Embedding変更時は別collectionへ再索引します。
 
-You can also call `POST /api/chat` with `X-User-Id: U001`:
-
-```json
-{
-  "message": "国内出差住宿费上限是多少？"
-}
-```
-
-The local seed grants `U001` explicit read access to the active travel-policy version. A leave-balance message such as `我的剩余年假是多少？` is routed to the business-data tool instead.
-
-## Safe Leave Request
-
-First prepare a request; the server calculates working days and current/remaining balance:
-
-```text
-POST /api/me/leave-requests/prepare
-X-User-Id: U001
-```
-
-```json
-{
-  "start_date": "2026-09-07",
-  "end_date": "2026-09-09"
-}
-```
-
-After showing the returned preview to the user, submit explicit confirmation with a caller-generated idempotency key:
-
-```text
-POST /api/me/leave-requests
-X-User-Id: U001
-Idempotency-Key: request-20260907-U001-001
-```
-
-```json
-{
-  "confirmation_token": "value returned by prepare",
-  "confirmed": true
-}
-```
-
-Confirmation performs final revalidation, atomic balance reservation, request creation, and token consumption in one transaction. Retrying the same operation returns the same request without a second deduction.
-
-## Tests
+## テスト・詳細資料
 
 ```powershell
 python -m pytest -q
+node --test tests/*.test.cjs
+python -m scripts.run_corpus_evaluation
 ```
 
-- Service unit tests cover normal, zero, and missing balances.
-- API tests cover HTTP 200, HTTP 404, and missing authentication context.
-- Repository integration tests run against isolated in-memory SQLite.
-- Safe-write tests include forced transaction rollback and an end-to-end idempotent retry.
+クラウドliveテストは明示的な有効化が必要で、通常の回帰では外部サービスに送信しません。
 
-## Documents
+- [詳細設計・安全なTool実行](docs/03_detailed_design.md)
+- [実ファイル検索評価](docs/evaluation/real_corpus_evaluation_report.md)
+- [初期の小型回帰評価](docs/evaluation/day4_retrieval_report.md)
+- [複雑文書解析の設計](docs/complex_document_upgrade_plan.md)
+- [開発記録](docs/development_journal.md) / [実装進捗](docs/phase4_progress.md)
+- [技術説明・面接用メモ](docs/interview_notes.md)
+- [Provider設定・過去の検証記録](docs/implementation_history.md)
+- [GitHubプロフィール用紹介案と設定方法](docs/github_profile.md)
 
-### 真实OCR / Vision配置（2026-09-16）
+今後の課題は本番認証、申請用の構造化会話状態、評価データの拡充です。現在のMock認証環境は私有アクセスに限定します。
 
-仅配置环境变量，不把真实密钥放入代码或此文档。默认关闭云识别；`FakeOcrProvider/FakeVisionProvider`只在测试或隔离演示中显式注入，生产配置不会自动回退为Fake。
+## 資格
 
-```powershell
-python -m pip install -e '.[test,ocr]'
-# GEMINI_API_KEY 请在当前终端安全设置；不要粘贴到聊天或Git。
-$env:GEMINI_VISION_MODEL = 'gemini-3.5-flash'
-$env:DOCUMENT_IMAGE_MODE = 'vision'
-# 以下是占位路径，请替换为仓库外自己的凭据路径。
-$env:GOOGLE_APPLICATION_CREDENTIALS = 'C:\secure\service-account.json'
-$env:DOCUMENT_OCR_MODE = 'google'
-```
-
-- Gemini：必须配置GEMINI_API_KEY；模型默认gemini-3.5-flash，可用GEMINI_VISION_MODEL覆盖。
-- OCR：安装可选ocr依赖，官方SDK通过ADC加载凭据。本地使用GOOGLE_APPLICATION_CREDENTIALS；程序不手动读取JSON。Google Cloud项目必须启用Vision API和Billing。
-- DOCUMENT_OCR_MODE=google只启用PDF文字不足页的OCR。Excel图片使用DOCUMENT_IMAGE_MODE=vision；若只想提取Excel图片文字，设置DOCUMENT_IMAGE_MODE=ocr并同时开启Google OCR。
-- off为默认；未知模式记录警告并关闭对应功能。缺密钥、SDK或ADC时返回安全失败分类，保留其他可解析内容；全部无有效内容仍将文档标记failed，不假装成功。
-- 单次OCR请求30秒超时，禁用SDK自动重试；confidence暂为null，不捏造准确率。
-- Gemini发送手写简化responseJsonSchema，输出仍由VisionDescription校验。400/403/404/429分别返回vision_http_对应状态；日志保留状态和脱敏Google message，不记录请求图像、密钥或凭据。
-- Service Account JSON不得提交Git，建议始终放仓库外；.gitignore覆盖常见凭据文件名但不能识别所有任意命名的JSON。不要开启SDK/HTTP底层调试日志共享凭据。
-
-显式live测试（可能产生费用，仅上传测试生成的虚构图片）：
-
-```powershell
-$env:RUN_GEMINI_VISION_LIVE = '1'
-python -m pytest tests/integration/test_gemini_vision_live.py -q
-Remove-Item Env:RUN_GEMINI_VISION_LIVE
-
-$env:RUN_GOOGLE_OCR_LIVE = '1'
-python -m pytest tests/integration/test_google_ocr_live.py -q
-Remove-Item Env:RUN_GOOGLE_OCR_LIVE
-```
-
-回归测试前确保两个RUN开关未设置或为0。API Key/模型/SDK在不同虚拟环境或终端里不一定相同。首次 live 失败请查看安全错误码和脱敏日志，不分享密钥或 JSON。旧实现只返回 `vision_http_error`，因此无法反推旧故障的唯一根因；2026-09-16 使用简化 Schema 后，Gemini Vision 和 Google OCR 的真实云调用均已验收通过。
-
-官方依据：[Gemini请求与Schema](https://ai.google.dev/api/generate-content)、[Google文档OCR](https://cloud.google.com/vision/docs/handwriting)。
-
-### 不需要API Key的隔离图片演示
-
-在项目根目录执行 `python -m scripts.image_acceptance_demo`，打开 `http://127.0.0.1:8768`。
-
-1. 用户保持U001，输入“虚构导航画面保持显示”，点击发送。
-2. 来源应显示 `fictional.xlsx / Sheet Demo / B3`，点击“查看图片”显示虚构导航图。
-3. 将用户改为U002，旧结果应清空；再次提问应无可用证据。
-
-每次启动使用新的临时目录，不读取原业务数据库、原索引或原文档。Vision只返回固定测试描述，不代表真实识别效果；没有云调用费用。终端Ctrl+C停止服务。临时文件保留供检查，路径打印在终端；不要在进程运行时删除Chroma文件。此入口仅供本机验收，不用于生产部署。
-
-### 图片证据前端（Phase 8）
-
-带image_url的来源卡片新增“查看图片”。点击后携带身份Header请求图片，不会自动调用Vision模型。重新加载会重新授权；切换身份清除旧聊天和图片。已下载内容无法靠撤权追回，生产系统仍需要真正的认证。
-
-前端测试：`node --test tests/image_evidence.test.cjs`（4 passed、0 failed）；后端离线回归为 146 passed、2 skipped。真实浏览器中的图片展示、身份切换清理、无权限检索隔离和旧图片 URL 403 均已验收通过。
-
-### 图片访问（Phase 7）
-
-Citation的image_url指向`GET /api/documents/{document_id}/versions/{version_id}/assets/{image_id}`。每次请求重新验证有效版本权限；无权限403，授权后归属不符或缺图404，非法编号或缺少身份参数422。响应设置no-store及nosniff；不公开存储目录，不返回本地路径。
-
-调用须携带开发用身份 Header（例如 `X-User-Id`），Mock 身份不是生产认证。Phase 8 前端会通过 `fetch` 携带当前身份 Header，再以 Blob URL 展示图片；切换身份会清除旧聊天、Citation 和图片。真实验收已确认无权限用户无法检索证据，并且请求旧图片 URL 返回 403。
-
-### 最终真实环境验收（2026-09-16）
-
-所有验收文件和图片均为完全虚构数据，没有使用真实公司的式样书、图片或机密信息。
-
-- 自动测试：Backend 146 passed、2 skipped；Frontend 4 passed、0 failed。
-- 真实云调用：Gemini Vision live 1 passed（`gemini-3.5-flash`）；Google Cloud Vision document OCR live 1 passed。
-- Excel：使用合法 ID 上传后状态为 active；两张图片均成功提取，一张遇到 Gemini 503 high demand 并被单图片故障隔离，另一张产生 Vision image Chunk。Chroma 中该版本共 7 条（6 text、1 image）。查询现代跨海桥梁成功命中 `Sheet1 / C67:N88`，页面成功显示原图。
-- Excel 权限：切换为 `U999 / D-OTHER / EMPLOYEE` 后，旧聊天、Citation 和图片被清除；再次查询无证据；使用旧图片 URL 请求返回 403。
-- 扫描 PDF：虚构 2 页 PDF 上传后状态为 active，产生 2 个 OCR image Chunk。查询安全代码成功命中 `Page 1`，页面成功显示该扫描页。
-- PDF 权限：切换为无权限用户后旧结果被清除，再次查询无证据，旧 Page 1 图片 URL 返回 403。
-- 完整链路已验证：上传 → Gemini Vision / Google OCR → Chroma → Citation → 图片展示 → 身份切换 → 无权限隔离 → 旧 URL 403。
-
-### 当前已知限制
-
-1. **自动 ID 生成不一致**：某些文件名会生成以 `-` 开头的 Document ID / Version ID，但 `LocalImageAssetStorage` 的安全路径规则要求首字符为字母或数字，因而可能出现 `image_extraction_failed`。当前可手工使用如 `TEST-EXCEL-001`、`TEST-EXCEL-001-V1` 的合法 ID；本轮只记录，不修改代码。
-2. **Gemini 临时 503**：真实请求可能因 high demand 返回 503。当前单图片故障隔离会跳过失败图片，其余文字和图片继续处理；没有自动重试。
-3. **Hash Embedding**：默认 deterministic Hash Embedding 用于离线架构、权限和 RAG 链路验证，不是生产级语义 Embedding，可能出现不相关 Citation。现在可显式切换真实模型，但真实准确率需要单独实测。
-
-## 可选：真实 RAG Provider / Optional real RAG providers
-
-默认仍是 `RAG_EMBEDDING_MODE=hash` 与 `RAG_ANSWER_MODE=evidence`：不需要密钥、不会联网，原有测试和本地演示行为不变。真实模式支持 Gemini，也支持千问／阿里云百炼；只有显式选择时才启用。项目原有的 `EmbeddingProvider`、`AnswerGenerator` 接口及其本地实现仍保留。
-
-在当前终端设置环境变量（密钥不要写进文件、命令历史、截图或 Git）：
-
-```text
-RAG_EMBEDDING_MODE=gemini
-RAG_EMBEDDING_MODEL=gemini-embedding-001
-RAG_EMBEDDING_DIMENSIONS=768
-RAG_ANSWER_MODE=gemini
-RAG_ANSWER_MODEL=<你账户可使用的 Gemini 文本模型>
-GEMINI_API_KEY=<仅在私有终端设置>
-RAG_PROVIDER_BASE_URL=https://generativelanguage.googleapis.com/v1beta
-RAG_PROVIDER_TIMEOUT_SECONDS=30
-```
-
-千问／百炼示例（推荐先使用这一组）：
-
-```text
-RAG_EMBEDDING_MODE=dashscope
-RAG_EMBEDDING_MODEL=text-embedding-v4
-RAG_EMBEDDING_DIMENSIONS=1024
-RAG_ANSWER_MODE=qwen
-RAG_ANSWER_MODEL=qwen-plus
-DASHSCOPE_API_KEY=<仅在私有终端设置>
-RAG_PROVIDER_BASE_URL=<你的百炼业务空间兼容接口 Base URL>
-RAG_PROVIDER_TIMEOUT_SECONDS=30
-RAG_VECTOR_PATH=chroma_data_dashscope
-RAG_VECTOR_COLLECTION=enterprise_documents_text_embedding_v4_1024
-RAG_MINIMUM_SCORE=0.36
-```
-
-若暂时没有业务空间专属地址，可以使用百炼控制台为当前地域提供的兼容地址；不要盲目复制其他地域的 Base URL。代码默认兼容旧公共地址，但生产和正式评测建议使用控制台显示的业务空间专属地址。
-
-配置完成后，先设置 `RUN_REAL_RAG_SMOKE_TEST=1` 并运行 `python -m scripts.check_real_rag_provider`。它只调用一次 Embedding 和一次回答生成，不写入 Chroma 或数据库。确认成功后才运行完整真实评测。
-
-`RAG_MINIMUM_SCORE` 是送入回答模型前的语义 Evidence Gate，不是 RRF 分数。默认 `0.25` 保持旧 Hash 行为。2026-09-26 使用 `text-embedding-v4` 对当前5份虚构文档／24题数据集完成校准：旧阈值会让两个无答案问题误通过，无关证据最高分约为 `0.347`；改用 `0.36` 后，21个正例、2个无答案问题和1个ACL问题全部通过。因此 `0.36` 是当前模型和当前语料的已验证配置，不是可直接套用到其他项目的通用阈值。
-
-`RAG_EMBEDDING_MODE` 和 `RAG_ANSWER_MODE` 可以单独切换。使用真实 Embedding 时，不能直接复用旧 Hash 向量。`RAG_VECTOR_PATH` 和 `RAG_VECTOR_COLLECTION` 用于建立并行索引；千问示例不会覆盖默认的 `chroma_data / enterprise_documents`。现有 Chroma collection 非空且模型／维度不一致会明确拒绝启动该 Repository。模型版本或维度变化也需要重建索引。配置错误或厂商失败不会静默退回 Hash；API 返回不含密钥、文档或厂商原始响应的安全错误。
-
-本项目已通过 `python -m scripts.reindex_vector_collection` 将旧索引中的28个正式Chunk非破坏性迁移到 `chroma_data_dashscope / enterprise_documents_text_embedding_v4_1024`；旧Hash索引仍然保留。迁移必须显式设置 `RUN_VECTOR_REINDEX=1`，不会修改Business DB。迁移前请先备份 `business.db`、`chroma_data` 和 `document_storage`。
-
-真实 LLM 只接收 ACL 过滤且 Evidence Gate 判定充分的片段。无权限或无足够证据时不调用 LLM。回答提示要求只依据证据、跟随中日文提问语言、不要臆造公司规则；Citation 仍由后端 Chunk metadata 生成，不采纳模型自己写出的来源。但提示不能绝对保证模型不幻觉，所以正式环境仍需人工抽检及更严格的回答评测。
-
-显式运行同一套 5 份虚构文档／24 题真实 Embedding 评测：在私有终端设 `RUN_REAL_RAG_EVALUATION=1` 和上述真实 Embedding 配置后运行 `python -m app.evaluation.real_provider_suite`。这会调用付费／限额 API，默认不会运行。若同时启用真实回答模型，报告还会给出基础回答字面事实命中数；同义改写可能被误判，必须人工复核。OCR/Vision 评测仍使用确定性模拟 Provider，不把这份报告说成端到端云端准确率。比较原来的 Hash 基线请运行 `python -m scripts.run_corpus_evaluation`。
-4. **EvidenceOnly Answer Generator**：当前直接返回最高相关 Evidence Chunk，不会进一步生成精炼答案。例如询问最大速度时可能返回整段 OCR 文本，这不是 OCR 识别失败。
-5. **Windows pytest 临时目录权限**：本机默认目录 `C:\Users\zyy\AppData\Local\Temp\pytest-of-zyy` 和 `.pytest_cache` 出现 WinError 5。使用此前不存在的新目录，例如 `--basetemp=.\.pytest_tmp_run1`，可完成 146 passed、2 skipped；这是当前开发机环境问题，不是业务代码失败。
-6. **Mock 身份**：`X-User-Id`、`X-Department-Id`、`X-Role-Ids` 仍是开发用身份上下文，不是生产认证。浏览器已经取得的图片不能通过后端撤回，但后续请求会重新检查权限。
-
-- `docs/03_detailed_design.md`: maintained detailed design and traceability.
-- `docs/development_journal.md`: implementation decisions, verification, and Git milestones.
-- `docs/phase4_progress.md`: current implementation, verification, and Git status.
-- `docs/interview_notes.md`: concise explanation and interview follow-up questions.
-
-## AWS EC2验收部署（2026-09-26）
-
-这是私有EC2验收环境，不是公开网站。Docker容器仅绑定`127.0.0.1:8000`，本机浏览器通过SSH端口转发访问。
-
-- 区域：`ap-northeast-1`
-- 镜像／容器：`enterprise-ai-support-agent:aws-v1` / `enterprise-ai-support-agent`
-- 密钥：EC2实例角色从SSM `/enterprise-ai-support-agent/prod/dashscope-api-key`读取；不得写入文件、截图或Git
-- 数据：`business.db`、`document_storage`和`chroma_data_dashscope`通过bind mount持久化，不进入镜像
-- RAG：`text-embedding-v4`（1024维）、`qwen-plus`、collection `enterprise_documents_text_embedding_v4_1024`、Evidence Gate `0.36`
-- 日志：CloudWatch `/enterprise-ai-support-agent/prod`，保留7天
-
-验收已确认：首页和年假余额接口返回HTTP 200；`U001`剩余8.0天；“现代跨海桥梁”查询回答“多跨斜拉桥设计”；Citation命中`TEST-EXCEL-001-V1 / Sheet1 / C67:N88`，原图返回798×406 PNG；CloudWatch收到启动和请求日志。验收未运行数据库seed，也未覆盖恢复索引。
-
-当前身份请求头仍是开发用模拟认证，不能直接向公网开放。演示结束后关闭SSH隧道并停止EC2。停止后计算费用停止，但EBS、S3、CloudWatch Logs及适用的Parameter Store功能仍可能计费；不要终止实例或删除EBS卷，除非确认不再需要恢复数据。
-
-## Roadmap
-
-1. Add Docker and perform the final local delivery audit.
-2. Add Admin Upload API and background processing state.
-3. Replace Hash Embedding and the evidence-only answer generator with production provider adapters.
-4. Add structured conversation state so Chat can invoke the existing safe write Tool without accidental execution.
-4. Safe leave-request workflow with confirmation, final revalidation, transaction, and idempotency.
-5. Docker and cloud deployment.
+開発者資格：**AWS Certified Generative AI Developer – Professional (AIP-C01)** — [Credlyで検証](https://www.credly.com/badges/265b8796-e4b7-443a-8a57-479f84b083e0/public_url)

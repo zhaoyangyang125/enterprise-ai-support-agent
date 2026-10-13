@@ -61,10 +61,11 @@
           </article>
         </div>
 
-        <div class="quick-prompts" aria-label="示例问题">
-          <button type="button" data-prompt="我的剩余年假是多少？">查询年假余额</button>
-          <button type="button" data-prompt="走行中の動画画面遷移は許可されますか？">HMI 安全规则</button>
-          <button type="button" data-prompt="VehicleSpeed の期待値は何ですか？">CAN 信号规格</button>
+        <p class="demo-note" lang="ja">架空データを使用したデモです。認証は開発用Mockです。質問例は入力のみで、送信ボタンを押すまで実行されません。U001と初期データを想定しています。</p>
+        <div class="quick-prompts" aria-label="質問例" lang="ja">
+          <button type="button" data-prompt="有給残日数を教えてください。">有給残日数</button>
+          <button type="button" data-prompt="国内出張の宿泊費上限はいくらですか？">宿泊費の上限</button>
+          <button type="button" data-prompt="国内出張の宿泊費上限の出典を教えてください。">規定の出典</button>
         </div>
 
         <form id="chat-form" class="composer">
@@ -116,7 +117,7 @@
             <label class="file-drop" for="document-file">
               <span class="file-icon" aria-hidden="true">＋</span>
               <strong id="file-label">选择 PDF 或 Excel</strong>
-              <small>最大 10 MB · 不支持扫描件 OCR</small>
+              <small>最大 10 MB · OCR / Visionは設定時のみ有効</small>
               <input
                 id="document-file"
                 name="file"
