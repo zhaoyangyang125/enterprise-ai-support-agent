@@ -95,6 +95,8 @@ EC2ではDockerのホスト側ポートを`127.0.0.1:8000`に限定し、SSHポ�
 
 ログイン不要の読み取り専用版は、独立入口 `app.public_demo:app` で第一段階のローカル実装を用意しています。AWSへの公開は未実施です。[Public Demoの起動・安全境界・制約](docs/public_demo_security.md)
 
+独立した非rootコンテナのローカル検証・資源予算・承認後の配置/rollbackは[Public Demo Docker手順](docs/public_demo_docker.md)を参照してください。現在はnetwork noneで、ホストのポートを公開しません。
+
 新しいローカル検証環境で実行します。seedは残日数を8日にリセットするため、既存のEC2データに対して実行しないでください。
 
 ```powershell

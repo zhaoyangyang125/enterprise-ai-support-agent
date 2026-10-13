@@ -1,0 +1,65 @@
+# PHASE 2A LOCAL/ISOLATED ACCEPTANCE ONLY. NOT A FINAL PUBLIC DEPLOYMENT CONFIG.
+# Keep network_mode: none and do not publish host ports in this phase.
+name: enterprise-public-demo-prep
+
+x-public-restrictions: &public-restrictions
+  image: enterprise-ai-support-agent-public:phase2a
+  user: "10001:10001"
+  read_only: true
+  network_mode: none
+  cap_drop: [ALL]
+  security_opt: [no-new-privileges:true]
+  init: true
+  cpus: 0.5
+  mem_limit: 768m
+  memswap_limit: 768m
+  pids_limit: 128
+  tmpfs:
+    - /tmp:rw,noexec,nosuid,nodev,size=256m,mode=1777
+  restart: "no"
+  logging:
+    driver: json-file
+    options:
+      max-size: "5m"
+      max-file: "2"
+
+services:
+  public-demo:
+    <<: *public-restrictions
+    container_name: enterprise-ai-support-agent-public-demo
+    environment:
+      PUBLIC_DEMO_DATA_DIR: /public-data/bundle
+      PUBLIC_DEMO_STATE_DIR: /public-state
+      PUBLIC_DEMO_MODEL_MODE: offline
+      PUBLIC_DEMO_PER_MINUTE: "20"
+      PUBLIC_DEMO_DAILY_REQUESTS: "200"
+      PUBLIC_DEMO_CONCURRENCY: "2"
+      PUBLIC_DEMO_TIMEOUT_SECONDS: "10"
+    volumes:
+      - type: volume
+        source: fictional-data
+        target: /public-data
+        read_only: true
+      - type: volume
+        source: quota-state
+        target: /public-state
+    stop_grace_period: 30s
+
+  prepare-data:
+    <<: *public-restrictions
+    profiles: [prepare]
+    container_name: enterprise-ai-support-agent-public-prepare
+    entrypoint: [python]
+    command: [-m, scripts.prepare_public_demo, --output, /public-build/bundle]
+    healthcheck:
+      disable: true
+    volumes:
+      - type: volume
+        source: fictional-data
+        target: /public-build
+
+volumes:
+  fictional-data:
+    name: enterprise-public-demo-fictional-data
+  quota-state:
+    name: enterprise-public-demo-quota-state

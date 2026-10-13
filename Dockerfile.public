@@ -1,0 +1,43 @@
+FROM python:3.12-slim@sha256:a6e34c598f2467ed0e9a8d349809fcd8b5c603269512df273a0bb1784edc11b1
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    HOME=/tmp \
+    XDG_CACHE_HOME=/tmp/cache \
+    OMP_NUM_THREADS=1 \
+    OPENBLAS_NUM_THREADS=1 \
+    MKL_NUM_THREADS=1 \
+    RAYON_NUM_THREADS=2 \
+    PUBLIC_DEMO_DATA_DIR=/public-data/bundle \
+    PUBLIC_DEMO_STATE_DIR=/public-state \
+    PUBLIC_DEMO_MODEL_MODE=offline
+
+RUN groupadd --gid 10001 publicdemo \
+    && useradd --uid 10001 --gid 10001 --no-create-home publicdemo \
+    && mkdir /public-data /public-build /public-state \
+    && chown 10001:10001 /public-build /public-state
+
+WORKDIR /app
+COPY deploy/public-demo/requirements.txt /app/requirements-public.txt
+COPY deploy/public-demo/requirements.lock.txt /app/requirements-public.lock.txt
+RUN python -m pip install -r /app/requirements-public.txt -c /app/requirements-public.lock.txt
+
+# File-by-file COPY remains safe even if a builder ignores Dockerfile-specific ignores.
+# The canonical build script also stages a public-only build context.
+COPY app/__init__.py app/public_demo.py app/public_demo_data.py app/public_demo_fixtures.py app/public_demo_limits.py app/public_demo_container.py app/public_demo_health.py /app/app/
+COPY app/public_static/index.html app/public_static/public.css app/public_static/public.js /app/app/public_static/
+COPY app/static/styles.css /app/app/static/
+COPY app/agent/__init__.py app/agent/router.py /app/app/agent/
+COPY app/auth/__init__.py app/auth/context.py /app/app/auth/
+COPY app/db/__init__.py app/db/models.py /app/app/db/
+COPY app/repositories/__init__.py app/repositories/document_access_repository.py app/repositories/leave_repository.py app/repositories/vector_repository.py app/repositories/hybrid_repository.py /app/app/repositories/
+COPY app/schemas/__init__.py app/schemas/chat.py app/schemas/document.py app/schemas/leave_balance.py app/schemas/rag.py /app/app/schemas/
+COPY app/services/__init__.py app/services/authorization_service.py app/services/embedding_service.py app/services/leave_service.py app/services/rag_service.py app/services/rag_provider_errors.py app/services/errors.py /app/app/services/
+COPY app/tools/__init__.py app/tools/get_leave_balance_tool.py app/tools/search_document_tool.py /app/app/tools/
+COPY scripts/prepare_public_demo.py /app/scripts/
+
+USER 10001:10001
+HEALTHCHECK --interval=30s --timeout=10s --start-period=120s --retries=3 \
+    CMD ["python", "-m", "app.public_demo_health"]
+ENTRYPOINT ["python", "-m", "app.public_demo_container"]

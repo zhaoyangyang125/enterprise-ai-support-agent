@@ -26,6 +26,7 @@ practice/
 deployment-acceptance.log
 public_demo_data/
 public_demo_state/
+public_demo_artifacts/
 
 # Runtime databases and private keys must never enter normal staging.
 *.db
