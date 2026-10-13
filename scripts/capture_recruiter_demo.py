@@ -28,7 +28,7 @@ def capture(updated: bool) -> None:
                 # 架空のseedユーザーのみ使用。アップロード・申請・seedは行わない。
                 page.locator('#user-id').fill('U001')
                 page.locator('#department-id').fill('D-SALES')
-                page.locator('#role-ids').fill('EMPLOYEE')
+                page.locator('#role-ids').fill('EMPLOYEE,ADMIN')
                 balance = context.request.get(URL + 'api/me/leave-balance', headers={'X-User-Id': 'U001'})
                 if balance.status != 200:
                     raise RuntimeError('本人の残日数データを取得できません。')
@@ -37,7 +37,13 @@ def capture(updated: bool) -> None:
                     ('rag-query.png', '国内出張の宿泊費上限はいくらですか？'),
                     ('leave-balance.png', '私の有給休暇はあと何日ありますか？'),
                 ]
-                for filename, question in cases:
+                for case in cases:
+                    filename = case[0]
+                    question = case[1]
+                    page.goto(URL, wait_until='networkidle')
+                    page.locator('#user-id').fill('U001')
+                    page.locator('#department-id').fill('D-SALES')
+                    page.locator('#role-ids').fill('EMPLOYEE,ADMIN')
                     page.locator('#message').fill(question)
                     with page.expect_response(lambda response: response.url == URL + 'api/chat' and response.request.method == 'POST') as pending:
                         page.locator('#send-button').click()
@@ -46,26 +52,43 @@ def capture(updated: bool) -> None:
                         raise RuntimeError('チャット照会に失敗しました。')
                     result = response.json()
                     if filename == 'rag-query.png':
+                        citation_found = False
+                        sources = result.get('sources', [])
+                        for source in sources:
+                            if source.get('source_name') == 'TravelPolicy_v1.pdf' and source.get('page') == 3:
+                                citation_found = True
+                        answer = result['answer']
+                        amount_found = re.search(r'10[,，]?000|1万', answer)
+                        japanese_found = re.search(r'[ぁ-んァ-ヶ]', answer)
                         valid = (result.get('intent') == 'knowledge_query'
                                  and result.get('evidence_found')
-                                 and re.search(r'10[,，]?000|1万', result['answer'])
-                                 and '円' in result['answer']
-                                 and re.search(r'[ぁ-んァ-ヶ]', result['answer'])
-                                 and any(source.get('source_name') == 'TravelPolicy_v1.pdf' and source.get('page') == 3 for source in result.get('sources', [])))
+                                 and amount_found
+                                 and '円' in answer
+                                 and japanese_found
+                                 and citation_found)
                     else:
+                        leave_balance = result.get('leave_balance', {})
                         valid = (result.get('intent') == 'leave_balance'
-                                 and result.get('leave_balance', {}).get('remaining_days') == days
+                                 and leave_balance.get('remaining_days') == days
                                  and result['answer'] == f'有給休暇の残日数は{days:g}日です。')
                     if not valid:
                         raise RuntimeError(f'{filename}: 想定する日本語回答・出典を検証できません。画像は保存しません。')
                     page.locator('.assistant-message').last.wait_for()
                     page.wait_for_function("!document.querySelector('#send-button').disabled")
-                    page.locator('.assistant-message').last.scroll_into_view_if_needed()
+                    page.evaluate("document.querySelector('#chat-feed').scrollTop = 0")
+                    complete_chat = page.locator('#chat-feed').evaluate('(element) => element.scrollHeight <= element.clientHeight + 1')
+                    if not complete_chat:
+                        raise RuntimeError('問答がスクロール領域に収まりません。画像は保存しません。')
+                    print(f'{filename}: {result}', flush=True)
                     page.screenshot(path=str(Path(temporary) / filename), full_page=True)
                 output = ROOT / 'docs/images'
                 output.mkdir(parents=True, exist_ok=True)
-                for filename, _ in cases:
-                    (output / filename).write_bytes((Path(temporary) / filename).read_bytes())
+                for case in cases:
+                    filename = case[0]
+                    temporary_path = Path(temporary) / filename
+                    image_bytes = temporary_path.read_bytes()
+                    output_path = output / filename
+                    output_path.write_bytes(image_bytes)
                 readme = ROOT / 'README.md'
                 text = readme.read_text(encoding='utf-8')
                 marker = '<!-- VERIFIED_DEMO_SCREENSHOTS -->'

@@ -4,6 +4,8 @@
 
 PDF・Excelに分散した社内規定を自然な言葉で質問でき、回答と一緒に元の文書・ページなどの出典を確認できます。ユーザーごとの閲覧権限を検索前に適用し、根拠が不足する場合は回答を控える設計です。
 
+**開発範囲：** Python / FastAPIによるAPI、権限制御付きRAG、業務Tool、日本語Demo UI、Docker / AWS EC2での私有デプロイまでを実装。
+
 ### 3つの主要機能
 
 | 機能 | 利用シーン |
@@ -12,7 +14,21 @@ PDF・Excelに分散した社内規定を自然な言葉で質問でき、回答
 | **本人の有給休暇残日数照会** | 「私の有給休暇はあと何日ありますか？」から本人の業務データを照会 |
 | **確認付きの有給休暇申請** | 専用APIで申請内容を事前確認し、明示的な確定後に処理。再送による二重処理を防止 |
 
-<!-- VERIFIED_DEMO_SCREENSHOTS -->
+### 実際のDemo画面
+
+架空データを使用したAWS私有Demoを、SSHポート転送経由でローカルPlaywrightから撮影（2026-10-13）。`U001 / D-SALES / EMPLOYEE,ADMIN`で日本語の回答・出典と現在の残日数を検証しました。
+
+**社内文書への質問と出典確認**
+
+「国内出張の宿泊費上限はいくらですか？」→ **1泊10,000円**。根拠：**TravelPolicy_v1.pdf / Page 3**。
+
+![国内出張の宿泊費照会とPDFの出典](docs/images/rag-query.png)
+
+**本人の有給休暇残日数照会**
+
+「私の有給休暇はあと何日ありますか？」→ **8日**（撮影時の業務DBと一致）。本人の業務データを照会するため、PDFのCitationは付けません。
+
+![有給休暇の残日数照会](docs/images/leave-balance.png)
 
 **主な技術：** Python / FastAPI · RAG / Chroma · Vector Search + BM25 + RRF · Qwen / DashScope Embedding · PDF / Excel · OCR / Gemini Vision · Docker / AWS
 
