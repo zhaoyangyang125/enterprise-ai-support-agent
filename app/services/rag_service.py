@@ -13,7 +13,7 @@ from app.schemas.rag import (
 from app.services.authorization_service import AuthorizationService
 
 
-NO_EVIDENCE_MESSAGE = "未找到足够的有效资料，无法确认该公司规则。"
+NO_EVIDENCE_MESSAGE = "十分な根拠資料が見つからないため、この社内規定については回答できません。"
 
 
 class AnswerGenerator(Protocol):

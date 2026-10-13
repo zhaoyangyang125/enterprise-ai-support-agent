@@ -75,7 +75,7 @@ python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
 
 | 質問 | 確認できる内容 |
 |---|---|
-| 有給残日数を教えてください。 | 本人の残日数8日（申請後は変化） |
+| 私の有給休暇はあと何日ありますか？ | 本人の残日数8日（申請後は変化） |
 | 国内出張の宿泊費上限はいくらですか？ | 1泊10,000円、TravelPolicy_v1.pdf / Page 3 |
 | 国内出張の宿泊費上限の出典を教えてください。 | 同じ規定のCitation |
 
@@ -102,6 +102,7 @@ python -m scripts.run_corpus_evaluation
 - [開発記録](docs/development_journal.md) / [実装進捗](docs/phase4_progress.md)
 - [技術説明・面接用メモ](docs/interview_notes.md)
 - [Provider設定・過去の検証記録](docs/implementation_history.md)
+- [私有EC2の更新・ロールバック手順](docs/private_ec2_update.md)
 - [GitHubプロフィール用紹介案と設定方法](docs/github_profile.md)
 
 今後の課題は本番認証、申請用の構造化会話状態、評価データの拡充です。現在のMock認証環境は私有アクセスに限定します。

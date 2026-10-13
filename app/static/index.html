@@ -1,11 +1,11 @@
 <!doctype html>
-<html lang="zh-CN">
+<html lang="ja">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta
       name="description"
-      content="Enterprise AI Support Agent 本地演示工作台"
+      content="Enterprise AI Support Agent デモ環境"
     />
     <title>Enterprise AI Support Agent</title>
     <link rel="stylesheet" href="/static/styles.css" />
@@ -21,14 +21,14 @@
       </div>
       <div class="runtime-badge">
         <span class="status-dot" aria-hidden="true"></span>
-        Local secure demo
+        Private demo · Mock認証
       </div>
     </header>
 
-    <section class="identity-bar" aria-label="开发身份设置">
+    <section class="identity-bar" aria-label="デモ用ユーザー設定">
       <div class="identity-copy">
-        <strong>开发身份 / Mock Authentication</strong>
-        <span>这些值会转换为后端的 CurrentUser。</span>
+        <strong>デモ用認証 / Mock Authentication</strong>
+        <span>入力値をデモ用のユーザー情報として使用します。</span>
       </div>
       <label>
         User ID
@@ -49,15 +49,15 @@
         <div class="panel-header">
           <div>
             <p class="section-kicker">AUTHORIZED ASSISTANT</p>
-            <h2 id="chat-title">公司制度与业务查询</h2>
+            <h2 id="chat-title">社内規定・業務データの照会</h2>
           </div>
-          <span class="security-chip">检索前权限过滤</span>
+          <span class="security-chip">検索前の権限チェック</span>
         </div>
 
         <div id="chat-feed" class="chat-feed" aria-live="polite">
           <article class="message assistant-message">
             <div class="message-label">Assistant</div>
-            <p>你好。我只会使用你有权访问且证据充分的资料回答，并显示可追踪的来源位置。</p>
+            <p>アクセス権限のある資料を根拠に回答し、出典を表示します。根拠が不足する場合は回答を控えます。</p>
           </article>
         </div>
 
@@ -71,32 +71,32 @@
         <form id="chat-form" class="composer">
           <div class="filter-row">
             <label>
-              内容类型
+              コンテンツ種別
               <select id="content-type">
-                <option value="">全部</option>
-                <option value="paragraph">正文 paragraph</option>
-                <option value="table">表格 table</option>
+                <option value="">すべて</option>
+                <option value="paragraph">本文 paragraph</option>
+                <option value="table">表 table</option>
                 <option value="key_value">属性 key-value</option>
-                <option value="note">备注 note</option>
-                <option value="title">标题 title</option>
+                <option value="note">注記 note</option>
+                <option value="title">見出し title</option>
               </select>
             </label>
             <label>
-              Sheet（可选）
-              <input id="sheet-filter" placeholder="例如：CAN信号" autocomplete="off" />
+              シート（任意）
+              <input id="sheet-filter" placeholder="例：CAN信号" autocomplete="off" />
             </label>
           </div>
-          <label class="message-input-label" for="message">输入问题</label>
+          <label class="message-input-label" for="message">質問を入力</label>
           <div class="composer-row">
             <textarea
               id="message"
               rows="3"
               maxlength="2000"
-              placeholder="例如：国内出差住宿费上限是多少？"
+              placeholder="例：国内出張の宿泊費上限はいくらですか？"
               required
             ></textarea>
             <button id="send-button" class="primary-button" type="submit">
-              <span>发送</span>
+              <span>送信</span>
               <small>Send</small>
             </button>
           </div>
@@ -108,7 +108,7 @@
           <div class="panel-header compact">
             <div>
               <p class="section-kicker">DOCUMENT INGESTION</p>
-              <h2 id="upload-title">文档上传与索引</h2>
+              <h2 id="upload-title">文書のアップロード・索引作成</h2>
             </div>
             <span class="admin-chip">ADMIN</span>
           </div>
@@ -116,7 +116,7 @@
           <form id="upload-form" class="upload-form">
             <label class="file-drop" for="document-file">
               <span class="file-icon" aria-hidden="true">＋</span>
-              <strong id="file-label">选择 PDF 或 Excel</strong>
+              <strong id="file-label">PDFまたはExcelを選択</strong>
               <small>最大 10 MB · OCR / Visionは設定時のみ有効</small>
               <input
                 id="document-file"
@@ -143,16 +143,16 @@
               </label>
             </div>
             <label>
-              标题 / Title
-              <input id="document-title" name="title" placeholder="HMI 安全方针" required />
+              タイトル
+              <input id="document-title" name="title" placeholder="HMI安全方針" required />
             </label>
             <label>
-              版本标签 / Version label
+              バージョンラベル
               <input id="version-label" name="version_label" value="v1.0" required />
             </label>
 
             <button id="upload-button" class="secondary-button" type="submit">
-              上传、解析并建立索引
+              アップロード・解析・索引作成
             </button>
             <p id="upload-feedback" class="form-feedback" aria-live="polite"></p>
           </form>
@@ -162,12 +162,12 @@
           <div class="panel-header compact">
             <div>
               <p class="section-kicker">PROCESSING STATUS</p>
-              <h2 id="status-title">文档版本状态</h2>
+              <h2 id="status-title">文書バージョンの状態</h2>
             </div>
-            <button id="refresh-status" class="icon-button" type="button">刷新</button>
+            <button id="refresh-status" class="icon-button" type="button">更新</button>
           </div>
           <div id="document-status-list" class="status-list" aria-live="polite">
-            <p class="empty-state">正在读取状态…</p>
+            <p class="empty-state">状態を取得しています…</p>
           </div>
         </section>
       </aside>
@@ -175,7 +175,7 @@
 
     <footer>
       <span>Python · FastAPI · SQLite · Chroma</span>
-      <span>所有示例资料均为完全虚构数据</span>
+      <span>すべてのサンプル資料は架空データです</span>
     </footer>
 
     <script src="/static/image-evidence.js" defer></script>

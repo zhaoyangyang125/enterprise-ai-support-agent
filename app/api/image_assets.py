@@ -24,9 +24,9 @@ def read_image(
     try:
         result = service.read(user, document_id, version_id, image_id)
     except PermissionError:
-        raise HTTPException(403, "无权读取此图片。") from None
+        raise HTTPException(403, "画像を閲覧する権限がありません。") from None
     except (FileNotFoundError, ValueError):
-        raise HTTPException(404, "图片不存在。") from None
+        raise HTTPException(404, "画像が見つかりません。") from None
     content = result[0]
     mime_type = result[1]
     return Response(content=content, media_type=mime_type,
