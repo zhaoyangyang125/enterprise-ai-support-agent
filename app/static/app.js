@@ -64,7 +64,7 @@ function addSources(messageElement, sources) {
   if (!sources || sources.length === 0) return;
 
   messageElement.append(
-    createElement("span", "evidence-note", `${sources.length} 个可追踪来源`),
+    createElement("span", "evidence-note", `${sources.length} 件の出典`),
   );
   const list = createElement("div", "source-list");
   for (const source of sources) {
@@ -91,11 +91,26 @@ function addSources(messageElement, sources) {
 async function responseError(response) {
   try {
     const body = await response.json();
-    if (typeof body.detail === "string") return body.detail;
+    if (typeof body.detail === "string") {
+      const messages = {
+        "Document administration permission is required.": "文書管理にはADMIN権限が必要です。",
+        "The document could not be parsed into indexable content.": "検索可能な内容を文書から抽出できませんでした。",
+        "Document processing failed.": "文書の処理に失敗しました。",
+        "Only .pdf and .xlsx files are supported.": "PDFとXLSXのみ対応しています。",
+        "The document exceeds the 10 MB upload limit.": "文書サイズは10 MB以下にしてください。",
+        "The uploaded document is empty.": "アップロードした文書が空です。",
+        "Leave balance not found.": "有給休暇の残日数情報が見つかりません。",
+        "RAG provider is unavailable or its index needs reindexing.": "回答サービスを利用できません。設定と索引を確認してください。",
+        "画像を閲覧する権限がありません。": "画像を閲覧する権限がありません。",
+        "画像が見つかりません。": "画像が見つかりません。",
+      };
+      return messages[body.detail] || `リクエストに失敗しました（HTTP ${response.status}）`;
+    }
+    if (Array.isArray(body.detail)) return "入力内容とユーザー設定を確認してください。";
   } catch (_error) {
     // The fallback below is intentionally safe and does not expose response internals.
   }
-  return `请求失败（HTTP ${response.status}）`;
+  return `リクエストに失敗しました（HTTP ${response.status}）`;
 }
 
 chatForm.addEventListener("submit", async (event) => {
@@ -107,7 +122,7 @@ chatForm.addEventListener("submit", async (event) => {
   addMessage("user", message);
   messageInput.value = "";
   sendButton.disabled = true;
-  const loading = addMessage("assistant", "正在确认权限并检索资料…", {
+  const loading = addMessage("assistant", "権限を確認し、資料を検索しています…", {
     loading: true,
   });
 
@@ -141,7 +156,7 @@ chatForm.addEventListener("submit", async (event) => {
   } catch (error) {
     loading.remove();
     if (requestGeneration !== identityGeneration) return;
-    addMessage("assistant", error.message || "无法完成查询。", { error: true });
+    addMessage("assistant", (error instanceof TypeError ? "通信に失敗しました。再試行してください。" : error.message) || "照会を完了できませんでした。", { error: true });
   } finally {
     sendButton.disabled = false;
     messageInput.focus();
@@ -173,7 +188,7 @@ uploadForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   uploadButton.disabled = true;
   uploadFeedback.className = "form-feedback";
-  uploadFeedback.textContent = "正在保存原本、解析结构并建立索引…";
+  uploadFeedback.textContent = "原本を保存し、文書を解析して索引を作成しています…";
 
   try {
     const response = await fetch("/api/admin/documents", {
@@ -186,11 +201,11 @@ uploadForm.addEventListener("submit", async (event) => {
     const result = await response.json();
     uploadFeedback.classList.add("success");
     uploadFeedback.textContent =
-      `处理完成：${result.status}，生成 ${result.chunk_count} 个 Chunk。`;
+      `処理完了：${({ active: "有効", failed: "失敗", processing: "処理中", inactive: "無効" })[result.status] || "完了"}、${result.chunk_count} Chunkを作成しました。`;
     await loadDocumentStatuses();
   } catch (error) {
     uploadFeedback.classList.add("error");
-    uploadFeedback.textContent = error.message || "文档处理失败。";
+    uploadFeedback.textContent = (error instanceof TypeError ? "通信に失敗しました。再試行してください。" : error.message) || "文書の処理に失敗しました。";
   } finally {
     uploadButton.disabled = false;
   }
@@ -199,7 +214,7 @@ uploadForm.addEventListener("submit", async (event) => {
 function renderStatuses(statuses) {
   statusList.replaceChildren();
   if (statuses.length === 0) {
-    statusList.append(createElement("p", "empty-state", "尚无文档版本记录。"));
+    statusList.append(createElement("p", "empty-state", "文書バージョンの記録はありません。"));
     return;
   }
 
@@ -216,7 +231,7 @@ function renderStatuses(statuses) {
     )
       ? item.status
       : "inactive";
-    const status = createElement("span", `status-pill ${knownStatus}`, item.status);
+    const status = createElement("span", `status-pill ${knownStatus}`, ({ active: "有効", failed: "失敗", processing: "処理中", inactive: "無効" })[knownStatus]);
     card.append(title, meta, status);
     statusList.append(card);
   }
@@ -225,7 +240,7 @@ function renderStatuses(statuses) {
 async function loadDocumentStatuses() {
   const requestGeneration = identityGeneration;
   statusList.replaceChildren(
-    createElement("p", "empty-state", "正在读取状态…"),
+    createElement("p", "empty-state", "状態を取得しています…"),
   );
   try {
     const response = await fetch("/api/admin/documents", {
@@ -241,7 +256,7 @@ async function loadDocumentStatuses() {
       createElement(
         "p",
         "empty-state",
-        error.message || "暂时无法读取文档状态。",
+        (error instanceof TypeError ? "通信に失敗しました。再試行してください。" : error.message) || "文書の状態を取得できませんでした。",
       ),
     );
   }

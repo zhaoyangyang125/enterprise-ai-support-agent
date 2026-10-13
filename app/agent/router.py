@@ -1,3 +1,6 @@
+import re
+import unicodedata
+
 from app.auth.context import CurrentUser
 from app.schemas.chat import ChatResponse
 from app.schemas.rag import RetrievalFilter
@@ -35,8 +38,20 @@ class AgentRouter:
     ) -> ChatResponse:
         """将余额意图路由到业务 Tool，其余只读问题路由到文档检索。 / Routes balance intent to its business tool and other read queries to document search."""
 
-        normalized = message.casefold()
-        if any(term.casefold() in normalized for term in self._LEAVE_BALANCE_TERMS):
+        normalized = unicodedata.normalize("NFKC", message).casefold()
+        # 日语必须同时包含休假对象和余额意图；规则/申请问题优先保持文档检索。
+        japanese_balance = (
+            any(term in normalized for term in ("有給", "年休"))
+            and not any(term in normalized for term in (
+                "ルール", "規定", "取得方法", "申請", "繰越", "繰り越", "付与", "上限",
+            ))
+            and bool(re.search(r"残(?:り|日数|数)?|あと\s*何日|何日\s*残|残高", normalized))
+        )
+        legacy_balance = any(
+            term.casefold() in normalized for term in self._LEAVE_BALANCE_TERMS
+            if term not in ("有給残日数", "有給の残り")
+        )
+        if japanese_balance or legacy_balance:
             return self._leave_balance_tool.execute(current_user)
         return self._search_document_tool.execute(
             message,

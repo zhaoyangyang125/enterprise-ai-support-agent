@@ -17,6 +17,6 @@ class GetLeaveBalanceTool:
         balance = self._service.get_my_leave_balance(current_user)
         return ChatResponse(
             intent="leave_balance",
-            answer=f"您的剩余年假为 {balance.remaining_days:g} 天。",
+            answer=f"有給休暇の残日数は{balance.remaining_days:g}日です。",
             leave_balance=balance,
         )

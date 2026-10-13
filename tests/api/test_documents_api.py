@@ -194,4 +194,5 @@ def test_root_serves_local_demo_workspace() -> None:
 
     assert response.status_code == 200
     assert "AI Support Agent" in response.text
-    assert "文档上传与索引" in response.text
+    assert "文書のアップロード・索引作成" in response.text
+    assert 'lang="ja"' in response.text

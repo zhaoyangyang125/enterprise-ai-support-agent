@@ -95,3 +95,38 @@ def test_router_passes_metadata_filter_only_to_document_search() -> None:
 
     assert search_tool.received_filter == metadata_filter
     assert leave_tool.received_user is None
+
+
+import pytest
+
+
+@pytest.mark.parametrize("message", [
+    "有給残日数を教えてください。",
+    "私の有給休暇はあと何日ありますか？",
+    "有給休暇は何日残っていますか？",
+    "有給の残りを確認したいです。",
+    "年休の残日数はいくつですか？",
+    "有給休暇はあと　何日ありますか？",
+])
+def test_japanese_balance_intent(message: str) -> None:
+    """常见日语余额问题只调用本人余额Tool。"""
+    leave, search = FakeLeaveBalanceTool(), FakeSearchDocumentTool()
+    result = AgentRouter(leave, search).route(message, CurrentUser(user_id="U001"))
+    assert result.intent == "leave_balance"
+    assert search.received_query is None
+
+
+@pytest.mark.parametrize("message", [
+    "有給休暇の取得ルールを教えてください",
+    "有給休暇の申請方法を教えてください",
+    "有給休暇の残日数の繰り越しルールを教えてください",
+    "有給休暇の付与日数は何日ですか？",
+    "有給休暇の取得上限は何日ですか？",
+    "有給休暇を申請したい。残りは何日？",
+])
+def test_japanese_leave_policy_stays_in_rag(message: str) -> None:
+    """规则与写入意图不误触发余额Tool。"""
+    leave, search = FakeLeaveBalanceTool(), FakeSearchDocumentTool()
+    result = AgentRouter(leave, search).route(message, CurrentUser(user_id="U001"))
+    assert result.intent == "knowledge_query"
+    assert leave.received_user is None

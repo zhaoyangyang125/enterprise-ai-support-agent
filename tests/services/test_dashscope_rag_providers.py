@@ -100,6 +100,7 @@ def test_qwen_answer_contains_evidence_but_not_backend_citation_metadata() -> No
     assert "出張時の食事代上限は3000円です。" in serialized
     assert "travel_policy.pdf" not in serialized
     assert "Do not output citations" in serialized
+    assert "Japanese language" in serialized
 
 
 @pytest.mark.parametrize("status_code", [429, 500])
