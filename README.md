@@ -76,6 +76,16 @@ flowchart TD
 
 EC2ではDockerのホスト側ポートを`127.0.0.1:8000`に限定し、SSHポート転送で閲覧します。SSMは設定・秘密情報、S3は退避データ、CloudWatchはログに使用します（文書検索をS3に直接実行する構成ではありません）。
 
+## AWS プライベートデプロイの検証証跡
+
+2026年9月、架空データを利用した検証環境を **AWS EC2（Docker）** 上に構築し、SSHポート転送で RAG の検索・回答・出典表示を確認しました。S3 によるバックアップと CloudWatch Logs へのアプリケーションログ転送も検証しています。
+
+![AWS CloudWatch Logs に記録された FastAPI の起動とリクエスト](docs/aws-deployment-evidence/07-cloudwatch-application-logs-ja.png)
+
+[EC2 の構成・S3 バックアップ・CloudWatch Logs の脱敏済みスクリーンショット（2026年9月）](docs/aws-deployment-evidence/README.md)
+
+**公開範囲について：** 上記は当時のプライベート環境の記録です。現在の一般公開や本番認証・セキュリティ審査の完了を示すものではありません。現行の Mock 認証環境を、そのままインターネットに公開する想定ではありません。
+
 ## 検索評価
 
 5つの架空PDF / Excel、60 Chunk、24問（回答可能21問・回答不能2問・ACL拒否1問）を使用。Top-Kは5です。以下は保存済みレポートの結果であり、今回の変更で外部API評価を再実行した値ではありません。
