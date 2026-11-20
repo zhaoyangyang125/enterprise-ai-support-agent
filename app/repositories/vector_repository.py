@@ -258,12 +258,85 @@ class ChromaVectorRepository:
                     confidence=self._optional_float(metadata.get("confidence")),
                     page=self._optional_int(metadata.get("page")),
                     section=self._optional_str(metadata.get("section")),
+                    chapter=self._optional_str(metadata.get("chapter")),
+                    section_no=self._optional_str(metadata.get("section_no")),
+                    heading=self._optional_str(metadata.get("heading")),
+                    chunk_index=self._optional_int(metadata.get("chunk_index")),
+                    printed_page=self._optional_int(metadata.get("printed_page")),
+                    refs=self._optional_str(metadata.get("refs")),
                     sheet=self._optional_str(metadata.get("sheet")),
                     cell_range=self._optional_str(metadata.get("cell_range")),
                     rows=self._optional_str(metadata.get("rows")),
                 )
             )
         return chunks
+
+    def get_neighbors(
+        self,
+        chunk: IndexedChunk,
+        allowed_document_version_ids: frozenset[str],
+        window: int = 1,
+    ) -> list[IndexedChunk]:
+        """取同一文档版本、同一节内读序相邻的授权Chunk(不含自身)。 / Returns authorized chunks adjacent in reading order within the same section."""
+        if (
+            chunk.chunk_index is None
+            or window <= 0
+            or chunk.document_version_id not in allowed_document_version_ids
+        ):
+            return []
+        wanted = [
+            chunk.chunk_index + offset
+            for offset in range(-window, window + 1)
+            if offset != 0 and chunk.chunk_index + offset >= 0
+        ]
+        result = self._collection.get(
+            where={
+                "$and": [
+                    {"document_version_id": chunk.document_version_id},
+                    {"chunk_index": {"$in": wanted}},
+                ]
+            },
+            include=["documents", "metadatas"],
+        )
+        ids = result.get("ids") or []
+        documents = result.get("documents") or []
+        metadatas = result.get("metadatas") or []
+        neighbors = [
+            self._from_stored_values(ids[i], documents[i], metadatas[i])
+            for i in range(len(ids))
+            if documents[i] is not None and metadatas[i] is not None
+        ]
+        # 跨节的相邻块没有关联，丢弃。 / Neighbors from another section are unrelated.
+        same_section = [n for n in neighbors if n.section_no == chunk.section_no]
+        return sorted(same_section, key=lambda n: n.chunk_index or 0)
+
+    def get_referenced(
+        self,
+        chunk: IndexedChunk,
+        allowed_document_version_ids: frozenset[str],
+    ) -> list[IndexedChunk]:
+        """取 chunk 内「→P.xx」所指印刷页上的授权Chunk。 / Returns authorized chunks on the printed pages this chunk refers to."""
+        if not chunk.refs or chunk.document_version_id not in allowed_document_version_ids:
+            return []
+        pages = [int(p) for p in chunk.refs.split(",") if p.isdigit()]
+        result = self._collection.get(
+            where={
+                "$and": [
+                    {"document_version_id": chunk.document_version_id},
+                    {"printed_page": {"$in": pages}},
+                ]
+            },
+            include=["documents", "metadatas"],
+        )
+        ids = result.get("ids") or []
+        documents = result.get("documents") or []
+        metadatas = result.get("metadatas") or []
+        found = [
+            self._from_stored_values(ids[i], documents[i], metadatas[i])
+            for i in range(len(ids))
+            if documents[i] is not None and metadatas[i] is not None
+        ]
+        return sorted(found, key=lambda c: c.chunk_index or 0)
 
     def list_authorized_chunks(
         self,
@@ -326,6 +399,12 @@ class ChromaVectorRepository:
             confidence=cls._optional_float(metadata.get("confidence")),
             page=cls._optional_int(metadata.get("page")),
             section=cls._optional_str(metadata.get("section")),
+            chapter=cls._optional_str(metadata.get("chapter")),
+            section_no=cls._optional_str(metadata.get("section_no")),
+            heading=cls._optional_str(metadata.get("heading")),
+            chunk_index=cls._optional_int(metadata.get("chunk_index")),
+            printed_page=cls._optional_int(metadata.get("printed_page")),
+            refs=cls._optional_str(metadata.get("refs")),
             sheet=cls._optional_str(metadata.get("sheet")),
             cell_range=cls._optional_str(metadata.get("cell_range")),
             rows=cls._optional_str(metadata.get("rows")),
@@ -378,6 +457,12 @@ class ChromaVectorRepository:
             "confidence",
             "page",
             "section",
+            "chapter",
+            "section_no",
+            "heading",
+            "chunk_index",
+            "printed_page",
+            "refs",
             "sheet",
             "cell_range",
             "rows",

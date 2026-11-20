@@ -25,6 +25,12 @@ class ParsedBlock(BaseModel):
     confidence: float | None = Field(default=None, ge=0.0, le=1.0)
     page: int | None = None
     section: str | None = None
+    chapter: str | None = None  # 章番号 / chapter number, e.g. "2"
+    section_no: str | None = None  # 節番号 / section number, e.g. "2-11"
+    heading: str | None = None  # 小見出し / sub-heading
+    chunk_index: int | None = Field(default=None, ge=0)  # 文書内の読み順 / reading order, for neighbor lookup
+    printed_page: int | None = None  # 紙面に印刷されたページ番号 / printed page number (P.xx targets)
+    refs: str | None = None  # 参照先の印刷ページ番号(カンマ区切り) / referenced printed pages, e.g. "41,55"
     sheet: str | None = None
     cell_range: str | None = None
     rows: str | None = None

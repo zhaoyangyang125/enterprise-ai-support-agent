@@ -32,6 +32,7 @@ from app.services.dashscope_rag_providers import (
     DashScopeEmbeddingProvider,
     QwenAnswerGenerator,
 )
+from app.services.context_expander import ContextExpander
 from app.services.document_service import DocumentService
 from app.services.leave_service import LeaveService
 from app.services.leave_request_service import LeaveRequestService
@@ -169,12 +170,24 @@ def get_retrieval_repository(
     return HybridVectorRepository(vector_repository, keyword_repository)
 
 
+def build_context_expander(repository: ChromaVectorRepository) -> ContextExpander | None:
+    """RAG_CONTEXT_EXPANSION=off 可关闭邻居/引用页扩展。 / Set RAG_CONTEXT_EXPANSION=off to disable neighbor/reference expansion."""
+    mode = os.getenv("RAG_CONTEXT_EXPANSION", "on").strip().lower()
+    if mode not in ("on", "off"):
+        raise ValueError("RAG_CONTEXT_EXPANSION must be on or off")
+    if mode == "off":
+        return None
+    references = int(os.getenv("RAG_CONTEXT_REFERENCES", "0"))  # 0 = 引用ページは追加しない
+    return ContextExpander(repository, max_referenced_per_hit=references)
+
+
 def get_rag_service(
     session: Annotated[Session, Depends(get_db_session)],
     vector_repository: Annotated[
         HybridVectorRepository,
         Depends(get_retrieval_repository),
     ],
+    chroma_repository: Annotated[ChromaVectorRepository, Depends(get_vector_repository)],
 ) -> RagService:
     """组装本地开发用的 Authorized RAG Service。 / Builds the Authorized RAG service for local development."""
 
@@ -186,6 +199,7 @@ def get_rag_service(
         vector_repository=vector_repository,
         answer_generator=answer_generator,
         minimum_score=get_rag_minimum_score(),
+        context_expander=build_context_expander(chroma_repository),
     )
 
 

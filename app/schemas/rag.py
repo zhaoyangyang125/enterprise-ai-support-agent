@@ -37,6 +37,12 @@ class IndexedChunk(BaseModel):
     confidence: float | None = Field(default=None, ge=0.0, le=1.0)
     page: int | None = None
     section: str | None = None
+    chapter: str | None = None
+    section_no: str | None = None
+    heading: str | None = None
+    chunk_index: int | None = Field(default=None, ge=0)
+    printed_page: int | None = None
+    refs: str | None = None
     sheet: str | None = None
     cell_range: str | None = None
     rows: str | None = None

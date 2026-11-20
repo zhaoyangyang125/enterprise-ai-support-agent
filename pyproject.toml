@@ -17,6 +17,7 @@ dependencies = [
     "pillow>=10,<13",
     "pymupdf>=1.24,<2.0",
     "pypdf>=5.0,<7.0",
+    "pdfplumber>=0.11,<1.0",
     "python-multipart>=0.0.9,<1.0",
 ]
 
