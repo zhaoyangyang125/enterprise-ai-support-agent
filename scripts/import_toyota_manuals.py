@@ -10,6 +10,7 @@ import sys
 from pathlib import Path
 
 from app.document_processing.toyota_manual_parser import ToyotaManualParser, model_name_from_file, version_from_file
+from scripts.chunk_preview import write_preview
 
 
 def main() -> None:
@@ -18,6 +19,7 @@ def main() -> None:
     ap.add_argument("--dir", type=Path, default=Path(__file__).resolve().parents[2] / "toyota-manuals")
     ap.add_argument("--only", default="", help="file-name substring filter, e.g. PRIUS")
     ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument("--no-preview", action="store_true", help="skip writing .chunk_preview pages")
     ap.add_argument("--user", default="U001", help="user id granted read access")
     args = ap.parse_args()
     files = sorted(p for p in args.dir.glob("*.pdf") if args.only.casefold() in p.name.casefold())
@@ -31,11 +33,24 @@ def main() -> None:
             print(f"{path.name}: {len(blocks)} chunks, median {sizes[len(sizes)//2]} chars, "
                   f"tables {sum(b.content_type == 'table' for b in blocks)}, "
                   f"no-section {sum(not b.section for b in blocks)}")
+            if not args.no_preview:
+                write_preview(path, blocks)
+        _announce_preview(args.no_preview)
         return
     from app.db.session import SessionFactory
     from app.dependencies import get_document_service, get_vector_repository
     with SessionFactory() as session:
         _ingest_all(files, get_document_service(session, get_vector_repository()), args.user)
+    if not args.no_preview:  # 取り込み後に同じ解析結果を確認ページへ / the same parse, written for eyeballing
+        parser = ToyotaManualParser()
+        for path in files:
+            write_preview(path, parser.parse(path))
+    _announce_preview(args.no_preview)
+
+
+def _announce_preview(skipped: bool) -> None:
+    if not skipped:
+        print(f"preview: {Path('.chunk_preview/index.html').resolve()}")
 
 
 def _ingest_all(files: list[Path], service, user_id: str) -> None:
