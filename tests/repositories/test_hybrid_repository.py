@@ -168,3 +168,18 @@ def test_bm25_empty_and_invalid_rrf_configuration():
     assert Bm25KeywordRetriever().rank("", [chunk("A", "text")], 5) == []
     with pytest.raises(ValueError):
         reciprocal_rank_fusion([], rrf_k=0)
+
+
+def test_tokenizer_separates_hiragana_katakana_and_kanji():
+    from app.repositories.hybrid_repository import Bm25KeywordRetriever
+    tokens = Bm25KeywordRetriever._tokenize("ソフトウェアを更新する")
+    assert "ソフトウェア" in tokens and "更新" in tokens and "を" in tokens
+    assert "ソフトウェアを" not in tokens
+
+
+def test_particles_do_not_count_as_query_terms():
+    from app.repositories.hybrid_repository import Bm25KeywordRetriever as B
+    terms = B._content_terms(B._tokenize("今日の天気は?"))
+    assert "の" not in terms and "は" not in terms and "天気" in terms
+    # all-hiragana queries keep their terms instead of becoming empty
+    assert B._content_terms(B._tokenize("おすすめ")) == B._tokenize("おすすめ")

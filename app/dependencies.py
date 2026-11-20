@@ -162,6 +162,14 @@ def get_rag_minimum_score() -> float:
     return minimum_score
 
 
+def get_rag_minimum_keyword_match_ratio() -> float:
+    """读取关键词证据下限(查询内容词被命中的比例)。 / Reads the keyword evidence threshold (share of query content terms matched)."""
+    ratio = float(os.getenv("RAG_MINIMUM_KEYWORD_MATCH_RATIO", "0.3"))
+    if not 0.0 <= ratio <= 1.0:
+        raise ValueError("RAG_MINIMUM_KEYWORD_MATCH_RATIO must be between 0 and 1")
+    return ratio
+
+
 def get_retrieval_repository(
     vector_repository: Annotated[ChromaVectorRepository, Depends(get_vector_repository)],
 ) -> HybridVectorRepository:
@@ -199,6 +207,7 @@ def get_rag_service(
         vector_repository=vector_repository,
         answer_generator=answer_generator,
         minimum_score=get_rag_minimum_score(),
+        minimum_keyword_match_ratio=get_rag_minimum_keyword_match_ratio(),
         context_expander=build_context_expander(chroma_repository),
     )
 
