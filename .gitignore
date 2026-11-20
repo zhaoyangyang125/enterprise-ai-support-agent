@@ -24,3 +24,8 @@ practice/
 
 # Local deployment evidence
 deployment-acceptance.log
+
+# Toyota owner manuals: copyrighted, never commit
+/toyota-manuals/
+/data/manuals/
+.chunk_preview/

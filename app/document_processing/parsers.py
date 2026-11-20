@@ -6,6 +6,7 @@ from PIL import Image
 
 from app.document_processing.excel_parser import ExcelDocumentParser
 from app.document_processing.pdf_parser import PdfDocumentParser
+from app.document_processing.toyota_manual_parser import ToyotaManualParser
 from app.schemas.document import ParsedBlock
 from app.document_processing.excel_image_extractor import ExcelImageExtractor
 from app.document_processing.storage import LocalImageAssetStorage, StoredImageAsset
@@ -97,6 +98,9 @@ class DocumentParserRegistry:
         """
         suffix = path.suffix.casefold()
         parser = self.get(path)
+        if suffix == ".pdf" and "_MM_" in path.name:
+            # トヨタ取扱書(MM)は見出し階層チャンク / Toyota manuals use heading-aware chunking
+            return ToyotaManualParser().parse(path)
         if suffix == ".pdf":
             return self._pdf_parser.parse(path, document_id, document_version_id)
         blocks = parser.parse(path)

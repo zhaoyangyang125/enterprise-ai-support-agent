@@ -11,6 +11,7 @@ from app.schemas.rag import (
     SourceCitation,
 )
 from app.services.authorization_service import AuthorizationService
+from app.services.context_expander import ContextExpander
 
 
 NO_EVIDENCE_MESSAGE = "十分な根拠資料が見つからないため、この社内規定については回答できません。"
@@ -47,6 +48,7 @@ class RagService:
         minimum_keyword_match_ratio: float = 0.3,
         exact_keyword_match_ratio: float = 0.8,
         retrieval_limit: int = 5,
+        context_expander: ContextExpander | None = None,
     ) -> None:
         """接收 RAG 流程依赖项和证据阈值。 / Receives RAG dependencies and the evidence threshold."""
 
@@ -69,6 +71,7 @@ class RagService:
         self._minimum_keyword_match_ratio = minimum_keyword_match_ratio
         self._exact_keyword_match_ratio = exact_keyword_match_ratio
         self._retrieval_limit = retrieval_limit
+        self._context_expander = context_expander
 
     def answer(
         self,
@@ -103,6 +106,13 @@ class RagService:
         evidence = self._select_sufficient_evidence(identifier_chunks)
         if not evidence:
             return self._no_evidence()
+        if self._context_expander is not None:
+            # 证据门限通过之后才追加支撑片段;再次确认授权范围。 / Added only after the gate passed; authorization re-checked.
+            evidence = evidence + [
+                chunk
+                for chunk in self._context_expander.expand(evidence, allowed_version_ids)
+                if chunk.document_version_id in allowed_version_ids
+            ]
 
         return RagAnswerResponse(
             answer=self._answer_generator.generate(query, evidence),
