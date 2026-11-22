@@ -101,3 +101,21 @@ def test_short_body_under_a_heading_is_kept():
     body = ["短い説明です。"]  # 7 chars: below the normal minimum but fine under a heading
     assert ToyotaManualParser._split_body(body) == []
     assert ToyotaManualParser._split_body(body, min_chars=5) == ["短い説明です。"]
+
+
+def test_cluster_rows_keeps_superscript_and_other_font_hyphen_on_the_same_line():
+    def word(text, x0, top, size):
+        return {"text": text, "x0": x0, "x1": x0 + 10, "top": top, "bottom": top + size, "size": size, "fontname": "F"}
+    main = [word("Wi", 140, 224, 10.0), word("Fi", 160, 224, 10.0)]
+    hyphen = word("-", 152, 221, 10.0)       # drawn in another font, 3pt higher
+    registered = word("®", 175, 222, 7.9)    # superscript
+    next_line = [word("次の行", 140, 240, 10.0)]
+    rows = ToyotaManualParser._cluster_rows([*main, hyphen, registered, *next_line])
+    assert len(rows) == 2
+    assert [w["text"] for w in rows[0]] == ["Wi", "-", "Fi", "®"]
+
+
+def test_cluster_rows_separates_normal_line_spacing():
+    def word(text, top):
+        return {"text": text, "x0": 10, "x1": 20, "top": top, "bottom": top + 8.4, "size": 8.4, "fontname": "F"}
+    assert len(ToyotaManualParser._cluster_rows([word("a", 100), word("b", 111), word("c", 122)])) == 3

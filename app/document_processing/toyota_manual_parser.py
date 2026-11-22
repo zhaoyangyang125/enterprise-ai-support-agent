@@ -23,6 +23,7 @@ _MIN_HEADED_CHARS = 8  # 見出しの下の短い本文は単独の分块とし�
 _TARGET_CHARS = 400  # この長さに達したら、次の ● の行で区切る(それまでは1塊のまま)
 _SINGLE_COLUMN_CROSS_RATIO = 0.15
 _HEADING_SHADE = (0.7, 0.86)  # 見出しボックスの灰色(0.82)。説明ボックスは0.9で本文なので除外 / heading boxes are 0.82; lighter 0.9 boxes hold body text
+_ROW_CENTRE_RATIO = 0.55  # 同一行とみなす垂直中心の差(字高に対する比) / max centre offset on one line, as a share of font size
 _HEADING_WRAP_GAP = 30  # 見出しの折り返しとみなす行間(pt)
 _HEADER_BAND = 150  # ページ上部の全幅ヘッダ領域
 _SENTENCE_END_RE = re.compile(r"(?<=[。！？])")
@@ -212,11 +213,7 @@ class ToyotaManualParser:
                     columns[col].append(w)
         out: list[dict] = []
         for col in sorted(columns):
-            rows = defaultdict(list)
-            for w in columns[col]:
-                rows[round(w["top"] / 4)].append(w)
-            for key in sorted(rows):
-                r = sorted(rows[key], key=lambda w: w["x0"])
+            for r in self._cluster_rows(columns[col]):
                 x0, x1 = min(w["x0"] for w in r), max(w["x1"] for w in r)
                 top, bottom = min(w["top"] for w in r), max(w["bottom"] for w in r)
                 boxed = any(b[0] - 2 <= x0 and x1 <= b[2] + 2 and b[1] - 2 <= top and bottom <= b[3] + 2 for b in gray)
@@ -238,6 +235,25 @@ class ToyotaManualParser:
         if len(rows) < 4:
             return False
         return sum(rows.values()) / len(rows) < _SINGLE_COLUMN_CROSS_RATIO
+
+    @staticmethod
+    def _cluster_rows(words: list[dict]) -> list[list[dict]]:
+        """垂直中心が近い語を同じ行にまとめる。上付き(®)や別フォントのハイフンは数pt上下にずれるため、
+        top座標の丸めで分けると別の行になり読み順が壊れる。
+        Groups words onto one line when their vertical centres are close: superscripts (®) and hyphens in
+        another font sit a few points off, and bucketing by rounded top split them into separate lines."""
+        lines: list[dict] = []
+        for w in sorted(words, key=lambda w: (w["top"] + w["bottom"]) / 2):
+            centre = (w["top"] + w["bottom"]) / 2
+            for line in reversed(lines[-3:]):
+                if abs(centre - line["centre"]) <= _ROW_CENTRE_RATIO * max(line["size"], w["size"]):
+                    line["words"].append(w)
+                    if w["size"] > line["size"]:  # the tallest word defines the line
+                        line["size"], line["centre"] = w["size"], centre
+                    break
+            else:
+                lines.append({"words": [w], "centre": centre, "size": w["size"]})
+        return [sorted(line["words"], key=lambda w: w["x0"]) for line in lines]
 
     @staticmethod
     def _join(words: list[dict]) -> str:
