@@ -26,7 +26,7 @@ def test_write_preview_creates_book_page_and_index(tmp_path: Path):
 def test_book_page_embeds_data_safely_and_links_pdf_page(tmp_path: Path):
     page = write_preview(tmp_path / "B.pdf", _blocks(), tmp_path / "p").read_text(encoding="utf-8")
     assert page.count("</script>") == 1  # chunk text containing </script> must not close the block
-    assert "#page=" in page and "file:///" in page
+    assert "#page=" in page and "file:///" in page and "<img id=pg" in page
 
 
 def test_second_book_is_added_to_index_not_replacing(tmp_path: Path):

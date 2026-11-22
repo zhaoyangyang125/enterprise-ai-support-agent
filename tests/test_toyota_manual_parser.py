@@ -72,3 +72,32 @@ def test_split_header_returns_printed_page():
              {"text": "本文", "size": 9.0, "bold": False, "top": 30, "col": 0}]
     label, page, rest = ToyotaManualParser._split_header(lines)
     assert (label, page, [l["text"] for l in rest]) == ("1-1. 基本操作", 18, ["本文"])
+
+
+def test_luminance_handles_number_and_tuples():
+    from app.document_processing.toyota_manual_parser import _luminance
+    assert _luminance(0.82) == 0.82
+    assert _luminance((0.82,)) == 0.82
+    assert abs(_luminance((0.8, 0.8, 0.8)) - 0.8) < 1e-9
+    assert _luminance(None) is None
+
+
+def test_gray_box_line_becomes_a_heading_even_with_body_font():
+    def line(text, top, boxed):
+        return {"text": text, "size": 10.0, "bold": False, "top": top, "col": 0, "boxed": boxed}
+    groups = ToyotaManualParser()._group([
+        line("ダイアグレコーダーについて", 100, True), line("故障診断の情報を記録します。", 120, False),
+        line("12Vバッテリーの取りはずしについて", 160, True), line("データが保存できないことがあります。", 180, False)])
+    assert [g[0] for g in groups] == ["ダイアグレコーダーについて", "12Vバッテリーの取りはずしについて"]
+
+
+def test_callout_label_in_a_box_is_not_a_heading():
+    lines = [{"text": "知識", "size": 10.0, "bold": False, "top": 100, "col": 0, "boxed": True},
+             {"text": "●注意事項です。", "size": 10.0, "bold": False, "top": 120, "col": 0}]
+    assert ToyotaManualParser()._group(lines)[0][0] == ""
+
+
+def test_short_body_under_a_heading_is_kept():
+    body = ["短い説明です。"]  # 7 chars: below the normal minimum but fine under a heading
+    assert ToyotaManualParser._split_body(body) == []
+    assert ToyotaManualParser._split_body(body, min_chars=5) == ["短い説明です。"]

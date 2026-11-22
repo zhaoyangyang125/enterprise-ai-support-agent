@@ -19,8 +19,10 @@ _CALLOUT_LABELS = {"警告": "警告", "注意": "注意", "知識": "知識", "
 _BULLET = "●"
 _MAX_CHARS = 700
 _MIN_CHARS = 40
+_MIN_HEADED_CHARS = 8  # 見出しの下の短い本文は単独の分块として残す / short bodies under a heading are kept
 _TARGET_CHARS = 400  # この長さに達したら、次の ● の行で区切る(それまでは1塊のまま)
 _SINGLE_COLUMN_CROSS_RATIO = 0.15
+_HEADING_SHADE = (0.7, 0.86)  # 見出しボックスの灰色(0.82)。説明ボックスは0.9で本文なので除外 / heading boxes are 0.82; lighter 0.9 boxes hold body text
 _HEADING_WRAP_GAP = 30  # 見出しの折り返しとみなす行間(pt)
 _HEADER_BAND = 150  # ページ上部の全幅ヘッダ領域
 _SENTENCE_END_RE = re.compile(r"(?<=[。！？])")
@@ -40,6 +42,28 @@ def normalize_cid(text: str) -> str:
     """フォント未対応で `(cid:N)` と出力された記号を戻す(COROLLA版)。未知のCIDは削除。
     Restores undecoded glyphs such as `(cid:79)` -> bullet; unknown CIDs are dropped."""
     return _CID_RE.sub(lambda m: _CID_MAP.get(int(m.group(1)), ""), text)
+
+
+def _luminance(color) -> float | None:
+    """pdfplumberの塗り色(数値/タプル)を0..1の明るさにする。 / Normalizes a fill colour to 0..1 brightness."""
+    if isinstance(color, (int, float)):
+        return float(color)
+    if isinstance(color, (list, tuple)) and color and all(isinstance(c, (int, float)) for c in color):
+        return sum(color) / len(color) if len(color) != 4 else 1 - min(1.0, sum(color[:3]) / 3 + color[3])
+    return None
+
+
+def gray_heading_boxes(page) -> list[tuple[float, float, float, float]]:
+    """灰色の塗りつぶし横長ボックス(本文と同じ字でも見出しとして使われる)の範囲。
+    Wide, short gray filled boxes: this manual styles some headings by background only."""
+    boxes = []
+    for r in page.rects:
+        if not r.get("fill"):
+            continue
+        shade = _luminance(r.get("non_stroking_color"))
+        if shade is not None and _HEADING_SHADE[0] < shade < _HEADING_SHADE[1] and r["width"] > 100 and 10 < r["height"] < 45:
+            boxes.append((r["x0"], r["top"], r["x1"], r["bottom"]))
+    return boxes
 
 
 _SECTION_NO_RE = re.compile(r"^(\d{1,2})-\d{1,2}(?=\.)")
@@ -107,7 +131,7 @@ class ToyotaManualParser:
         chunks = self._group(lines)
         blocks = list(table_blocks)
         for heading, body in chunks:
-            for piece in self._split_body(body):
+            for piece in self._split_body(body, _MIN_HEADED_CHARS if heading else _MIN_CHARS):
                 crumb = " / ".join(p for p in (model, label, heading) if p)
                 blocks.append(ParsedBlock(
                     content=f"[{crumb}]\n{piece}", content_type="paragraph",
@@ -172,6 +196,7 @@ class ToyotaManualParser:
             return any(b[0] - 1 <= w["x0"] and w["x1"] <= b[2] + 1 and
                        b[1] - 1 <= w["top"] and w["bottom"] <= b[3] + 1 for b in boxes)
         mid = page.width / 2
+        gray = gray_heading_boxes(page)
         two_col = self._is_two_column(page.chars, mid)
         columns = defaultdict(list)
         if two_col:
@@ -192,7 +217,10 @@ class ToyotaManualParser:
                 rows[round(w["top"] / 4)].append(w)
             for key in sorted(rows):
                 r = sorted(rows[key], key=lambda w: w["x0"])
-                out.append({"text": self._join(r),
+                x0, x1 = min(w["x0"] for w in r), max(w["x1"] for w in r)
+                top, bottom = min(w["top"] for w in r), max(w["bottom"] for w in r)
+                boxed = any(b[0] - 2 <= x0 and x1 <= b[2] + 2 and b[1] - 2 <= top and bottom <= b[3] + 2 for b in gray)
+                out.append({"text": self._join(r), "boxed": boxed,
                             "size": max(w["size"] for w in r),
                             "bold": any("Bold" in w["fontname"] for w in r),
                             "top": r[0]["top"], "col": col})
@@ -235,7 +263,10 @@ class ToyotaManualParser:
         prev = None  # 直前の見出し行 / previous heading line
         for ln in lines:
             text = ln["text"]
-            if ln["size"] >= 11.5 and ln["bold"] and len(text) < 40:
+            is_big = ln["size"] >= 11.5 and ln["bold"] and len(text) < 40
+            is_boxed = (ln.get("boxed") and len(text) < 60 and text not in _CALLOUT_LABELS
+                        and not text.startswith(_BULLET))
+            if is_big or is_boxed:
                 wrapped = (heading and not body and prev is not None and prev["col"] == ln["col"]
                            and 0 <= ln["top"] - prev["top"] < _HEADING_WRAP_GAP)
                 if wrapped:
@@ -258,7 +289,7 @@ class ToyotaManualParser:
         return groups
 
     @staticmethod
-    def _split_body(body: list[str]) -> list[str]:
+    def _split_body(body: list[str], min_chars: int = _MIN_CHARS) -> list[str]:
         """行を結合して段落化し、_MAX_CHARS を超えるときだけ ■/●/【 の境界で分割する。"""
         text = ""
         pieces: list[str] = []
@@ -277,7 +308,7 @@ class ToyotaManualParser:
         if text.strip():
             pieces.append(text.strip())
         pieces = [q for p in pieces for q in ToyotaManualParser._split_long(p)]
-        return [p for p in pieces if len(p) >= _MIN_CHARS] or ([text.strip()] if len(text.strip()) >= _MIN_CHARS else [])
+        return [p for p in pieces if len(p) >= min_chars] or ([text.strip()] if len(text.strip()) >= min_chars else [])
 
     @staticmethod
     def _split_long(piece: str) -> list[str]:
