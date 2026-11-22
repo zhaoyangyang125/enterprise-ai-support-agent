@@ -24,6 +24,8 @@ _TARGET_CHARS = 400  # この長さに達したら、次の ● の行で区切�
 _SINGLE_COLUMN_CROSS_RATIO = 0.15
 _HEADING_SHADE = (0.7, 0.86)  # 見出しボックスの灰色(0.82)。説明ボックスは0.9で本文なので除外 / heading boxes are 0.82; lighter 0.9 boxes hold body text
 _ROW_CENTRE_RATIO = 0.55  # 同一行とみなす垂直中心の差(字高に対する比) / max centre offset on one line, as a share of font size
+_TAB_EDGE = 140  # この範囲(pt)のページ端にある回転文字を章タブとみなす / rotated chars this close to the page edge are tab text
+_TAB_PAD = 6
 _HEADING_WRAP_GAP = 30  # 見出しの折り返しとみなす行間(pt)
 _HEADER_BAND = 150  # ページ上部の全幅ヘッダ領域
 _SENTENCE_END_RE = re.compile(r"(?<=[。！？])")
@@ -65,6 +67,19 @@ def gray_heading_boxes(page) -> list[tuple[float, float, float, float]]:
         if shade is not None and _HEADING_SHADE[0] < shade < _HEADING_SHADE[1] and r["width"] > 100 and 10 < r["height"] < 45:
             boxes.append((r["x0"], r["top"], r["x1"], r["bottom"]))
     return boxes
+
+
+def _edge_tab_ranges(page) -> list[tuple[float, float]]:
+    """ページ端の章タブ(回転した縦書き文字と隣の章番号)の横範囲。本文ではないので読み取りから除く。
+    X-ranges of the rotated chapter tab at the page edge (and its chapter digit): margin text, not body."""
+    edge = [c for c in page.chars
+            if c.get("upright") is False and (c["x1"] > page.width - _TAB_EDGE or c["x0"] < _TAB_EDGE)]
+    ranges = []
+    for side in (True, False):
+        cluster = [c for c in edge if (c["x0"] > page.width / 2) == side]
+        if cluster:
+            ranges.append((min(c["x0"] for c in cluster) - _TAB_PAD, max(c["x1"] for c in cluster) + _TAB_PAD))
+    return ranges
 
 
 _SECTION_NO_RE = re.compile(r"^(\d{1,2})-\d{1,2}(?=\.)")
@@ -193,6 +208,10 @@ class ToyotaManualParser:
 
     # -- lines ------------------------------------------------------------
     def _lines(self, page, boxes) -> list[dict]:
+        tabs = _edge_tab_ranges(page)
+        if tabs:
+            page = page.filter(lambda o: o.get("object_type") != "char"
+                               or not any(lo <= o["x0"] and o["x1"] <= hi for lo, hi in tabs))
         def inside(w) -> bool:
             return any(b[0] - 1 <= w["x0"] and w["x1"] <= b[2] + 1 and
                        b[1] - 1 <= w["top"] and w["bottom"] <= b[3] + 1 for b in boxes)

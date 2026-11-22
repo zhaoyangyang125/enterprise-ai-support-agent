@@ -119,3 +119,27 @@ def test_cluster_rows_separates_normal_line_spacing():
     def word(text, top):
         return {"text": text, "x0": 10, "x1": 20, "top": top, "bottom": top + 8.4, "size": 8.4, "fontname": "F"}
     assert len(ToyotaManualParser._cluster_rows([word("a", 100), word("b", 111), word("c", 122)])) == 3
+
+
+class _FakePage:
+    width = 595.0
+
+    def __init__(self, chars):
+        self.chars = chars
+
+
+def _char(text, x0, upright):
+    return {"text": text, "x0": x0, "x1": x0 + 7, "upright": upright}
+
+
+def test_edge_tab_range_covers_rotated_chars_near_the_page_edge():
+    from app.document_processing.toyota_manual_parser import _edge_tab_ranges
+    page = _FakePage([_char("各", 489, False), _char("種", 489, False), _char("2", 489, True), _char("本", 120, True)])
+    ((lo, hi),) = _edge_tab_ranges(page)
+    assert lo < 489 and hi > 496
+    assert not (lo <= 120 <= hi)  # body text far from the edge is untouched
+
+
+def test_rotated_chars_in_the_page_middle_are_not_treated_as_a_tab():
+    from app.document_processing.toyota_manual_parser import _edge_tab_ranges
+    assert _edge_tab_ranges(_FakePage([_char("図", 300, False)])) == []
