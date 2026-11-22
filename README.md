@@ -14,11 +14,17 @@
 
 <img src="docs/images/rag-query.png" alt="出張規程の宿泊費上限と、根拠となる PDF の3ページ目" width="760">
 
-[有休残日数の照会画面（撮影時は8日）](docs/images/leave-balance.png)
+![本人の有休残日数が8日と表示された照会画面](docs/images/leave-balance.png)
+
+撮影時の残日数は8日です。この値は本人の業務データから取得しています。
 
 ## PRIUS 取扱書の検索例
 
-**質問　Bluetooth機器は最大何台まで登録できますか？**
+### Bluetooth 機器は最大何台まで登録できるか
+
+![Bluetooth 機器の登録台数に対する回答と、根拠の PDF 91ページ](docs/images/portfolio/01_prius_answer_hero.png)
+
+画面には「登録は最大5台、うちハンズフリー電話として使えるのは最大2台」と表示されます。最初の出典に挙がった PDF 91ページを開くと、この二つの数字を同じ箇条書きで確認できます。
 
 | 確認するもの | 実際の内容（抜粋） |
 |---|---|
@@ -26,16 +32,23 @@
 | **取扱書の原文**　PDF 91ページ／冊子89ページ「知識」 | Bluetooth® 機器は、5 台まで登録できますが、ハンズフリー電話として使用できるのは最大2 台までです。（ハンズフリー電話を2 台接続するには、ドライバーの設定が必要です。） |
 | **Chroma に保存したチャンク**　`chunk_index=193` | 【知識】<br>●Bluetooth®機器は、5台まで登録できますが、ハンズフリー電話として使用できるのは最大2台までです。（ハンズフリー電話を2台接続するには、ドライバーの設定が必要です。） |
 
-「5台」は登録できる機器の総数、「2台」はハンズフリー電話として使える台数です。この二つの条件は原文の同じ箇条書きにあり、分割後も一つのチャンクに残っています。チャンクには見出し「Bluetooth® 機器をマルチメディアシステムから登録する」とページ番号を保存しており、回答画面の最初の出典はこの PDF の91ページです。
+### USB メモリーの再生手順を原文と照合する
 
-[この質問の回答・出典を実行画面で見る](docs/images/portfolio/01_prius_answer_hero.png)
+![左に抽出した USB 再生手順、右に同じ手順を記載した取扱書のページ](docs/images/portfolio/02_chunk_pdf_evidence.png)
 
-<details>
-<summary>別のページでチャンクと PDF を並べた実例を見る</summary>
+左側は「USB メモリーの音楽ファイルを再生する」のチャンク、右側は対応する PDF 205ページ（冊子203ページ）です。USB メモリーを接続してオーディオを選択する手順を左右で読み比べられます。検索には左側のテキストを使い、右側の図は原文の確認用に表示します。
 
-USB メモリーの再生手順は PDF 205ページ（冊子203ページ）にあります。[原文照合画面](docs/images/portfolio/02_chunk_pdf_evidence.png)の左側が抽出したチャンク、右側が同じページの原文です。取扱書の検索にはテキスト層を使い、図は原文確認用のプレビューに表示しています。
+### Embedding を変えると正解ページの順位はどう変わるか
 
-</details>
+![日本語18問での Hash と Qwen の正解ページ到達件数](docs/images/portfolio/03_embedding_evaluation.png)
+
+同じ日本語18問で、正解ページが1位に入ったのは Hash が11問、Qwen が10問でした。上位5件まで広げると、どちらも16問です。ここで数えたのは正解ページを取得できた質問の数です。生成した回答の正しさは別に評価する必要があります。
+
+### 手元の資料で答えられない質問への応答
+
+![東京の人口を尋ねると、根拠が見つからず出典を返さなかった画面](docs/images/portfolio/04_evidence_gate_refusal.png)
+
+「東京の人口は何人ですか？」は取扱書の対象外です。画面には根拠が不足していることを伝えるメッセージだけが表示されます。この例では Evidence Gate が回答生成前に処理を止め、出典も返していません。図中の 8/8 は、閾値を調整した後に対象外の日本語8問すべてで回答を控えた結果です。
 
 取扱書の著作権は権利者に帰属します。PDF 本体はリポジトリに含めていません。
 
@@ -72,7 +85,9 @@ flowchart TD
 
 Docker を AWS EC2 に配置し、ホスト側ポートをループバックに限定して SSH ポート転送で動作を確認しました。SSM で設定と秘密情報を取得し、S3 へのバックアップ・復元と CloudWatch Logs へのログ転送を検証しました。以下は当時のプライベート環境の記録です。
 
-[EC2・S3 の構成と検証記録](docs/aws-deployment-evidence/README.md) · [CloudWatch に記録した起動・リクエストログ](docs/aws-deployment-evidence/07-cloudwatch-application-logs-ja.png)
+![CloudWatch Logs に記録された FastAPI の起動とリクエスト](docs/aws-deployment-evidence/07-cloudwatch-application-logs-ja.png)
+
+EC2 上のアプリケーションが起動し、リクエストを受けた時のログです。[EC2・S3 の構成と検証記録](docs/aws-deployment-evidence/README.md)
 
 ## 検索評価
 
@@ -93,8 +108,6 @@ Hit@k は、上位 k 件のチャンクのいずれかに正解ページが含�
 | Qwen | 0/8 | 8/8 | 0.5 / 0.7 |
 
 閾値はベクトルスコアとキーワード一致率の順です。日本語の回答可能18問は、両方式とも調整前後で全問が Gate を通過しました。調整に使った質問と評価セットは一部重なるため、未知の質問に対する拒答率は別途検証が必要です。再現用コマンドは `python -m scripts.eval_toyota --verbose --sweep` です。
-
-[検索結果の比較図](docs/images/portfolio/03_embedding_evaluation.png) · [取扱書に根拠がない「東京の人口は何人ですか？」への応答画面](docs/images/portfolio/04_evidence_gate_refusal.png)
 
 ### 社内文書での評価
 
