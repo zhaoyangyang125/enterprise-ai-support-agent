@@ -41,7 +41,7 @@ class Bm25KeywordRetriever:
         limit: int,
     ) -> list[RetrievedChunk]:
         """使用正文和可追踪metadata进行关键词排名。 / Ranks content and citation metadata."""
-        query_terms = self._tokenize(query)
+        query_terms = self._content_terms(self._tokenize(query))
         if not query_terms or not chunks or limit <= 0:
             return []
         documents: list[list[str]] = []
@@ -140,13 +140,21 @@ class Bm25KeywordRetriever:
         return " ".join(parts)
 
     @staticmethod
+    def _content_terms(terms: list[str]) -> list[str]:
+        """助詞・活用語尾など純粋なひらがなの語を除く(の/は/には/する 等は多くの分块に現れ、一致率を水増しする)。
+        Drops hiragana-only terms (particles, endings) that match nearly every chunk; falls back to all terms."""
+        content = [t for t in terms if not re.fullmatch(r"[぀-ゟ]+", t)]
+        return content or terms
+
+    @staticmethod
     def _tokenize(text: str) -> list[str]:
-        """保留编号/范围，并为中日文补充字符bigram。 / Preserves codes and adds CJK bigrams."""
+        """保留编号/范围，并为中日文补充字符bigram。平假名/片假名/汉字分别成词。 / Preserves codes and adds CJK bigrams; hiragana, katakana and kanji are separate tokens."""
         normalized = text.casefold()
         token_pattern = (
             r"[a-z0-9]+(?:[-_.:][a-z0-9]+)*"
-            r"|[\u3040-\u30ff]+"
-            r"|[\u3400-\u9fff]+"
+            r"|[぀-ゟ]+"
+            r"|[゠-ヿ]+"
+            r"|[㐀-鿿]+"
         )
         tokens = re.findall(token_pattern, normalized)
         result: list[str] = []
