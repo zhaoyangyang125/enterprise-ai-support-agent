@@ -133,6 +133,8 @@ class DashScopeEmbeddingProvider:
         self.dimensions = dimensions
         self.index_identity = f"dashscope:{model_name}:{dimensions}"
         self._batch_size = batch_size
+        # 累计接口返回的 Token 用量，供迁移脚本统计成本。 / Accumulates reported token usage.
+        self.total_tokens = 0
 
     def embed(self, texts: list[str]) -> list[list[float]]:
         """按批次请求并按原始输入顺序返回向量。 / Preserves input order across batches."""
@@ -148,6 +150,11 @@ class DashScopeEmbeddingProvider:
                     "encoding_format": "float",
                 },
             )
+            usage = body.get("usage")
+            if isinstance(usage, dict):
+                used = usage.get("total_tokens", usage.get("prompt_tokens"))
+                if isinstance(used, int) and not isinstance(used, bool):
+                    self.total_tokens += used
             data = body.get("data")
             if not isinstance(data, list) or len(data) != len(batch):
                 raise RagProviderError("rag_embedding_count_mismatch")

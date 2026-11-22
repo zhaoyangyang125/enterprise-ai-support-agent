@@ -364,6 +364,10 @@ class ChromaVectorRepository:
                 chunks.append(chunk)
         return chunks
 
+    def existing_chunk_ids(self) -> set[str]:
+        """只读取已存在的 Chunk ID，用于断点续传。 / Lists stored chunk IDs for resumable migration."""
+        return set(self._collection.get(include=[]).get("ids") or [])
+
     def list_all_chunks(self) -> list[IndexedChunk]:
         """读取迁移所需的全部 Chunk，不用于用户检索。 / Lists all chunks for controlled migration."""
         result = self._collection.get(include=["documents", "metadatas"])

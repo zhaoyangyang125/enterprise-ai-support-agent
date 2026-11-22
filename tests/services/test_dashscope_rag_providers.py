@@ -59,6 +59,20 @@ def test_dashscope_embedding_batches_and_restores_response_order() -> None:
     assert "secret" not in str(requests[0].url)
 
 
+def test_dashscope_embedding_accumulates_reported_tokens() -> None:
+    def respond(request: httpx.Request) -> httpx.Response:
+        payload = json.loads(request.content)
+        data = [{"index": i, "embedding": [0.1] * 8} for i, _ in enumerate(payload["input"])]
+        return httpx.Response(200, json={"data": data, "usage": {"total_tokens": 7}})
+
+    provider = DashScopeEmbeddingProvider(
+        "secret", "text-embedding-v4", 8, transport=httpx.MockTransport(respond), batch_size=1
+    )
+    provider.embed(["A", "B"])
+
+    assert provider.total_tokens == 14
+
+
 def test_dashscope_embedding_rejects_wrong_dimension() -> None:
     transport = httpx.MockTransport(
         lambda request: httpx.Response(
