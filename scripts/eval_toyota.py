@@ -3,6 +3,7 @@
 Usage (repo root, venv active; the manual must already be imported):
     python -m scripts.eval_toyota
     python -m scripts.eval_toyota --verbose          # per-question detail for the misses
+    python -m scripts.eval_toyota --sweep            # try many thresholds on ONE set of searches (one API call per question)
     RAG_MINIMUM_SCORE=0.4 RAG_MINIMUM_KEYWORD_MATCH_RATIO=0.7 python -m scripts.eval_toyota
 
 CSV columns: id, lang, question, expected_pages (PDF page numbers joined by "|"), should_answer, note.
@@ -31,6 +32,8 @@ from app.services.rag_service import EvidenceOnlyAnswerGenerator, RagService
 
 DEFAULT_CSV = Path("docs/evaluation/toyota_prius_questions.csv")
 TOP_K = (1, 3, 5)
+SWEEP_VEC = (0.25, 0.3, 0.35, 0.4, 0.45, 0.5, 0.6)
+SWEEP_KW = (0.3, 0.5, 0.7)
 
 
 def load_questions(path: Path) -> list[dict]:
@@ -56,12 +59,35 @@ def summarize(results: list[dict]) -> dict:
     return out
 
 
+def print_sweep(results: list[dict], auth, hybrid) -> None:
+    """同じ検索結果で閾値の組み合わせだけを変えて評価する(追加のAPI呼び出しなし)。
+    Re-applies the evidence gate with many thresholds to the same retrieved chunks."""
+    print()
+    print("threshold sweep (same searches, no extra API calls):")
+    print("  vec   kw   | ja answerable passed | ja unanswerable refused | zh answerable passed | zh unanswerable refused")
+    for vec in SWEEP_VEC:
+        for kw in SWEEP_KW:
+            gate = RagService(auth, hybrid, EvidenceOnlyAnswerGenerator(),
+                              minimum_score=vec, minimum_keyword_match_ratio=kw)
+            cell = defaultdict(lambda: [0, 0])  # (lang, should_answer) -> [correct, total]
+            for r in results:
+                passed = bool(gate._select_sufficient_evidence(r["retrieved"]))
+                key = (r["lang"], r["should_answer"])
+                cell[key][1] += 1
+                cell[key][0] += int(passed) if r["should_answer"] == "yes" else int(not passed)
+            def f(k):
+                return f"{cell[k][0]}/{cell[k][1]}"
+            print(f"  {vec:<5} {kw:<4} | {f(('ja', 'yes')):>12}         | {f(('ja', 'no')):>14}          | "
+                  f"{f(('zh', 'yes')):>12}       | {f(('zh', 'no')):>12}")
+
+
 def main() -> None:
     sys.stdout.reconfigure(encoding="utf-8")
     ap = argparse.ArgumentParser()
     ap.add_argument("--csv", type=Path, default=DEFAULT_CSV)
     ap.add_argument("--user", default="U001")
     ap.add_argument("--verbose", action="store_true")
+    ap.add_argument("--sweep", action="store_true", help="evaluate a grid of evidence thresholds on the same search results")
     args = ap.parse_args()
 
     hybrid = get_retrieval_repository(get_vector_repository())
@@ -76,7 +102,7 @@ def main() -> None:
         )
         for row in load_questions(args.csv):
             retrieved = hybrid.search(row["question"], allowed, 5)
-            results.append({**row, "rank": rank_of_expected(retrieved, row["pages"]),
+            results.append({**row, "rank": rank_of_expected(retrieved, row["pages"]), "retrieved": retrieved,
                             "evidence": bool(service._select_sufficient_evidence(retrieved)),
                             "top": [(c.page, (c.heading or c.section or "")[:22]) for c in retrieved[:3]]})
 
@@ -89,6 +115,8 @@ def main() -> None:
         hits = ", ".join(f"Hit@{k} {s[f'hit@{k}']}/{s['n_yes']}" for k in TOP_K)
         print(f"[{lang}] answerable: {hits}, evidence passed {s['answered']}/{s['n_yes']} | "
               f"unanswerable: refused {s['refused']}/{s['n_no']}")
+    if args.sweep:
+        print_sweep(results, auth, hybrid)
     if args.verbose:
         print("\nmisses:")
         for r in results:
