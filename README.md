@@ -1,57 +1,46 @@
 # Enterprise AI Support Agent
 
-**社内資料を探す、根拠を確認する、有給休暇の残日数を調べる。これらを一つの画面で行える、企業向けAIアシスタントの個人開発作品です。**
+社内規程の根拠を確かめたいときと、自分の有給休暇を調べたいときに、同じ画面から問い合わせができる日本語の業務アシスタントです。Python / FastAPI で、文書の取り込み、閲覧権限に応じた検索、出典表示、業務 API を実装し、Docker と AWS EC2 のプライベート環境で動作を確認しました。
 
-PDF・Excelに分散した社内規定を自然な言葉で質問でき、回答と一緒に元の文書・ページなどの出典を確認できます。ユーザーごとの閲覧権限を検索前に適用し、根拠が不足する場合は回答を控える設計です。
-
-**開発範囲：** Python / FastAPIによるAPI、権限制御付きRAG、業務Tool、日本語Demo UI、Docker / AWS EC2での私有デプロイまでを実装。
-
-### 3つの主要機能
-
-| 機能 | 利用シーン |
+| 利用場面 | システムの動作 |
 |---|---|
-| **社内文書への質問・出典確認** | 「国内出張の宿泊費上限はいくらですか？」に回答し、根拠となるPDFのページを表示 |
-| **本人の有給休暇残日数照会** | 「私の有給休暇はあと何日ありますか？」から本人の業務データを照会 |
-| **確認付きの有給休暇申請** | 専用APIで申請内容を事前確認し、明示的な確定後に処理。再送による二重処理を防止 |
+| 社内規程を調べる | 閲覧できる有効版の PDF・Excel に絞り、Chroma のベクトル検索と BM25 の順位を RRF で統合。根拠が十分なら回答と該当ページ・セル範囲を返す |
+| 自分の有休を確認する | チャットのルールベースのルーターが照会用ツールを選び、本人の残日数を業務 DB から取得する |
+| 有休を申請する | 専用 API で申請内容をプレビューし、利用者の確定後に登録する。確認トークンと冪等キーで二重処理を防ぐ |
 
-### 実際のDemo画面
+## 社内業務での実行例
 
-架空データを使用したAWS私有Demoを、SSHポート転送経由でローカルPlaywrightから撮影（2026-10-13）。`U001 / D-SALES / EMPLOYEE,ADMIN`で日本語の回答・出典と現在の残日数を検証しました。
+「国内出張の宿泊費上限はいくらですか？」という質問に、**1泊10,000円**と回答し、根拠の `TravelPolicy_v1.pdf` 3ページを表示します。有休残日数の照会は本人の業務データを参照します。以下は架空データを用いた EC2 検証環境の記録です。
 
-**社内文書への質問と出典確認**
+<img src="docs/images/rag-query.png" alt="出張規程の宿泊費上限と、根拠となる PDF の3ページ目" width="760">
 
-「国内出張の宿泊費上限はいくらですか？」→ **1泊10,000円**。根拠：**TravelPolicy_v1.pdf / Page 3**。
+[有休残日数の照会画面（撮影時は8日）](docs/images/leave-balance.png)
 
-![国内出張の宿泊費照会とPDFの出典](docs/images/rag-query.png)
+## 技術検証事例：PRIUS 取扱書を出典付きで検索する
 
-**本人の有給休暇残日数照会**
+社内文書と同じ検索基盤に、日本語の取扱書を取り込みました。見出し階層を保って分割し、検索で見つけた断片（チャンク）を元の PDF のページまでたどれるかを検証しています。
 
-「私の有給休暇はあと何日ありますか？」→ **8日**（撮影時の業務DBと一致）。本人の業務データを照会するため、PDFのCitationは付けません。
+**日本語で質問する。** 「Bluetooth機器は最大何台まで登録できますか？」という質問に、登録は最大5台、うちハンズフリー電話として使えるのは最大2台と回答。出典の先頭に PDF 91ページが表示されました。
 
-![有給休暇の残日数照会](docs/images/leave-balance.png)
+<img src="docs/images/portfolio/01_prius_answer_hero.png" alt="Bluetooth 機器の登録台数についての日本語回答と、PRIUS 取扱書の PDF 91ページへの出典" width="840">
 
-**主な技術：** Python / FastAPI · RAG / Chroma · Vector Search + BM25 + RRF · Qwen / DashScope Embedding · PDF / Excel · OCR / Gemini Vision · Docker / AWS
+**原文と照合する。** USB メモリーの再生手順では、プレビューの左側に見出しと抽出テキスト、右側に PDF 205ページ（冊子の203ページ）を表示します。右側の図は原文の確認用です。取扱書の検索インデックスにはテキスト層を取り込んでいます。
 
-**実行環境：** 架空データを使用した検証用システムです。AWS EC2上でDockerによる私有環境のデプロイ・動作確認を行っています。認証は開発用Mock、チャットのTool選択はルール型Routerです。申請はチャットから直接実行せず、専用APIを使用します。
+<img src="docs/images/portfolio/02_chunk_pdf_evidence.png" alt="USB メモリーの再生手順を抽出したチャンクと、対応する PDF 205ページの比較" width="840">
 
-以下に実装、安全設計、検索評価と再現方法をまとめています。
+**根拠が不足する質問を止める。** 「東京の人口は何人ですか？」には、取扱書に十分な根拠がないため、回答を控えるメッセージを返します。この場合、回答生成モデルは呼び出さず、出典も返しません。
 
-## 実装した機能
+<img src="docs/images/portfolio/04_evidence_gate_refusal.png" alt="東京の人口に関する質問に対し、根拠不足を通知した実行画面" width="840">
 
-| 領域 | 実装内容 |
-|---|---|
-| API・業務データ | Python、FastAPI、Pydantic、SQLAlchemy、SQLite。本人の有給休暇残日数を照会 |
-| 権限制御付きRAG | Business DBのACL・有効な文書バージョンを**検索前**に適用。ChromaのVector SearchとBM25をRRFで統合 |
-| 根拠と出典 | Evidence Gateで根拠不足時に回答を抑止。Citationは保存済みmetadataから生成（PDFページ、Excel Sheet / Cell Range、画像） |
-| 文書取り込み | PDF / Excel Parser、管理者向けアップロード、文書バージョン管理、Google Cloud Vision OCR、Gemini Vision、権限付き原画像表示 |
-| 実モデル接続 | DashScopeのtext-embedding-v4、Qwen回答生成。Gemini用Providerも実装。標準設定はオフラインのHash Embedding / EvidenceOnly回答 |
-| Agent / Tool Calling | **ルール型Router**が残日数照会・文書検索の読み取りToolを選択。完全自律型のLLM Agentではない |
-| 安全な申請 | Prepareでプレビューと確認tokenを発行。Confirmで再検証・残日数予約・申請作成・token消費を同一transactionで実行。冪等キーによる再送対策 |
-| 配置・運用検証 | Docker / AWS EC2、S3によるデータ退避・復元、SSMによる秘密情報取得、CloudWatch Logsへのログ転送 |
+画面例はローカルでの実行結果をトリミングして配置したものです。取扱書の著作権は権利者に帰属し、PDF 本体はリポジトリに含めていません。
 
-**認証はMock Authenticationです。** `X-User-Id`等の自己申告Headerを使用しており、JWT等の本番認証は未実装です。ACL検証は実装していますが、このままインターネット公開する構成ではありません。自然言語チャットから申請を書き込む会話制御は未実装で、申請は専用APIを使用します。
+## 実装とシステム構成
 
-## システム構成
+- **検索と権限制御**　業務 DB の ACL から閲覧可能な文書バージョンを取得し、ベクトル検索と BM25 の両方に適用します。RRF で順位を統合した後、Evidence Gate が根拠を選び、サーバーが保存済みメタデータから出典を組み立てます。
+- **文書処理**　管理者用アップロード、文書バージョン管理、PDF のページ・Excel のシート名とセル範囲を保持します。一般文書には Google Cloud Vision OCR、Gemini Vision、権限付き原画像表示にも対応しています。
+- **回答生成**　標準設定はローカルの Hash Embedding と根拠テキストを返す `evidence` モードです。検索用の Embedding と回答用のモデルは個別に設定できます。
+- **業務 API**　FastAPI / SQLAlchemy / SQLite を使用。休暇申請の確定時に、再検証・残日数の予約・申請登録・確認トークンの消費を同じトランザクションで処理します。
+- **認証の範囲**　デモは `X-User-Id` などのヘッダーを用いる開発用 Mock 認証です。閲覧権限の判定を実装し、本番向けの本人認証は今後の課題としています。
 
 ```mermaid
 flowchart TD
@@ -74,21 +63,37 @@ flowchart TD
     Parse --> DB
 ```
 
-EC2ではDockerのホスト側ポートを`127.0.0.1:8000`に限定し、SSHポート転送で閲覧します。SSMは設定・秘密情報、S3は退避データ、CloudWatchはログに使用します（文書検索をS3に直接実行する構成ではありません）。
+## AWS でのデプロイ検証
 
-## AWS プライベートデプロイの検証証跡
+Docker を AWS EC2 に配置し、ホスト側ポートをループバックに限定して SSH ポート転送で動作を確認しました。SSM で設定と秘密情報を取得し、S3 へのバックアップ・復元と CloudWatch Logs へのログ転送を検証しました。以下は当時のプライベート環境の記録です。
 
-2026年9月、架空データを利用した検証環境を **AWS EC2（Docker）** 上に構築し、SSHポート転送で RAG の検索・回答・出典表示を確認しました。S3 によるバックアップと CloudWatch Logs へのアプリケーションログ転送も検証しています。
-
-![AWS CloudWatch Logs に記録された FastAPI の起動とリクエスト](docs/aws-deployment-evidence/07-cloudwatch-application-logs-ja.png)
-
-[EC2 の構成・S3 バックアップ・CloudWatch Logs の脱敏済みスクリーンショット（2026年9月）](docs/aws-deployment-evidence/README.md)
-
-**公開範囲について：** 上記は当時のプライベート環境の記録です。現在の一般公開や本番認証・セキュリティ審査の完了を示すものではありません。現行の Mock 認証環境を、そのままインターネットに公開する想定ではありません。
+[EC2・S3 の構成と検証記録](docs/aws-deployment-evidence/README.md) · [CloudWatch に記録した起動・リクエストログ](docs/aws-deployment-evidence/07-cloudwatch-application-logs-ja.png)
 
 ## 検索評価
 
-5つの架空PDF / Excel、60 Chunk、24問（回答可能21問・回答不能2問・ACL拒否1問）を使用。Top-Kは5です。以下は保存済みレポートの結果であり、今回の変更で外部API評価を再実行した値ではありません。
+### PRIUS 取扱書での Embedding 比較
+
+PRIUS 1冊（854チャンク）に対し、手作業で[31問の評価セット](docs/evaluation/toyota_prius_questions.csv)を作成しました。内訳は日本語26問（回答可能18問・対象外8問）、中国語5問（回答可能4問・対象外1問）です。両方式とも **ベクトル検索＋BM25＋RRF** を使用し、Hash と DashScope の `qwen3.7-text-embedding-flash` を別々の Chroma コレクションで比較しました。
+
+<img src="docs/images/portfolio/03_embedding_evaluation.png" alt="日本語の回答可能18問における正解ページの検索結果。Hit@1 は Hash 11問・Qwen 10問、Hit@5 はともに16問" width="840">
+
+| 日本語の回答可能18問 | Hit@1 | Hit@3 | Hit@5 |
+|---|---:|---:|---:|
+| Hash（256次元） | 11/18 | 14〜15/18 | 16/18 |
+| Qwen（1024次元） | 10/18 | 15/18 | 16/18 |
+
+Hit@k は、上位 k 件のチャンクのいずれかに正解ページが含まれた質問の割合です。Hash の Hit@3 は同じ設定でも1問分変動しました。この日本語セットでは Qwen の優位性は確認できませんでした。参考として、中国語の回答可能4問では Qwen が4問とも正解ページを上位5件に取得しました。
+
+| 日本語の対象外8問で回答を控えた件数 | 既定の閾値（0.25 / 0.3） | 調整後 | 調整後の閾値 |
+|---|---:|---:|---|
+| Hash | 2/8 | 8/8 | 0.4 / 0.7 |
+| Qwen | 0/8 | 8/8 | 0.5 / 0.7 |
+
+閾値はベクトルスコアとキーワード一致率の順です。日本語の回答可能18問は、両方式とも調整前後で全問が Gate を通過しました。調整に使った質問と評価セットは一部重なるため、未知の質問に対する拒答率は別途検証が必要です。再現用コマンドは `python -m scripts.eval_toyota --verbose --sweep` です。
+
+### 社内文書での評価
+
+5つの架空PDF / Excel、60 Chunk、24問（回答可能21問・回答不能2問・ACL拒否1問）を使用。Top-Kは5です。以下は保存済みの評価結果です。
 
 | Embedding・評価日 | 検索方式 | Hit@1 | Hit@5 | Recall@5 | MRR | Source Hit Rate |
 |---|---|---:|---:|---:|---:|---:|
@@ -101,37 +106,24 @@ EC2ではDockerのホスト側ポートを`127.0.0.1:8000`に限定し、SSHポ�
 
 実EmbeddingのEvidence Gate閾値`0.36`はこのモデル・評価用文書で校正した値です。RRF順位スコアとは異なり、他のデータへの適用には再評価が必要です。[評価方法・制約・実モデル結果](docs/evaluation/real_corpus_evaluation_report.md)
 
-## トヨタ取扱書(MM)パーサの現状と制約
+## Qwen による回答生成と検証の限界
 
-実在のPDF取扱書向けに、見出し階層を使う`ToyotaManualParser`を追加しました（固定長ではなく「車種 / 章 / 節 / 見出し」のパンくず付きChunk）。`scripts/import_toyota_manuals.py`で取り込み、`.chunk_preview/`にChunkと元PDFページを並べて確認できるページを生成します。著作権のあるPDF本体はGit管理外です。
+`RAG_ANSWER_MODE=qwen` で、Evidence Gate を通った根拠を `qwen-plus` に渡します。出典の文書名やページ番号はサーバーがメタデータから付与します。以下は**検索に Hash、回答生成に Qwen** を使う設定例です。取り込み済みの Hash インデックスと、環境変数 `DASHSCOPE_API_KEY` を用意してください。
 
-**確認済みの範囲：** 検証したのは`PRIUS`1冊（854 Chunk）のみです。他の8冊は`--dry-run`で分割統計を確認しただけで、検索品質は未検証です。
+```powershell
+$env:RAG_EMBEDDING_MODE = "hash"
+$env:RAG_ANSWER_MODE = "qwen"
+$env:RAG_ANSWER_MODEL = "qwen-plus"
+$env:RAG_MINIMUM_SCORE = "0.4"                    # Hash Embedding向けの調整後閾値
+$env:RAG_MINIMUM_KEYWORD_MATCH_RATIO = "0.7"
+python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
+```
 
-**ベースライン（標準のHash Embedding、`PRIUS`のみ）：** 手書きの31問（日本語の回答可能18問・回答不能8問、中国語5問）で、正解ページがTop-kのChunkに含まれるかを測りました。質問リストは[`docs/evaluation/toyota_prius_questions.csv`](docs/evaluation/toyota_prius_questions.csv)、実行は`python -m scripts.eval_toyota --verbose`です。
+- **検索と回答の評価範囲**　上の31問で集計したのはページの命中と根拠判定です。生成回答は4問を目視確認しました。Wi-Fi Hotspot の例では根拠に88ページだけが入り、必要な102ページの操作手順を回答できませんでした。回答が冗長になったり、利用者に不要な追加対応を求めたりする例もあります。
+- **正解ページの定義**　ガイド線の意味を問う質問では、指定した296ページが上位5件から漏れました。他のページにも関連する説明があり、ページの完全一致だけでは回答の妥当性を判断できません。
+- **図表と適用範囲**　取扱書専用パーサーは見出しとテキスト層を利用します。図の凡例・表・本文の対応や複雑な段組みの読み順には改善の余地があります。他の8冊では分割統計のみを確認しており、検索品質の検証は PRIUS 1冊に限られます。
 
-| 質問（日本語） | 指標 | Hash・既定の閾値（0.25 / 0.3） | Hash・調整後（0.4 / 0.7） | 実Embedding・既定の閾値 | 実Embedding・調整後（0.5 / 0.7） |
-|---|---|---:|---:|---:|---:|
-| 回答可能（18問） | 正解ページがTop1 / Top3 / Top5 | 11 / 14〜15 / 16 | 11 / 14〜15 / 16 | 10 / 15 / 16 | 10 / 15 / 16 |
-| 回答可能（18問） | Evidence Gateを通過 | 18 | 18 | 18 | 18 |
-| 回答不能（8問） | 正しく回答を抑止 | 2 | **8** | 0 | **8** |
-
-実Embeddingは`DashScope qwen3.7-text-embedding-flash`（1024次元）を別Collectionに入れて評価しました（855 Chunk、約14.8万トークン）。**日本語の質問では、Hash+BM25に対する明確な改善は見られませんでした**（Top1は1問減、Top3は1問増で、実行ごとの変動の範囲内）。外れる質問（`ガイド画面に表示される線は何を表していますか？`、`音声で音量を調整するには？`）は両方式で共通です。実Embeddingは無関係な質問にも高い類似度を返すため、既定の閾値では回答抑止が0/8に悪化し、閾値の再調整が必要でした。
-
-- 既定の閾値では、取扱書と無関係な質問8問のうち6問が「根拠あり」と判定されました。Hash Embeddingの類似度では無関係なChunkと区別できないためです。キーワード側でも、助詞（の・は等）が検索語として一致率を水増ししていたため、助詞を除外する修正を入れています（この表は修正後の値）。閾値を引き上げることで8問すべてを抑止できました。
-- **Top3は同じ設定でも実行ごとに1問分（14〜15）変動します。** 原因は調べていません（近似検索の順位のゆらぎの可能性）。
-- 順位が外れる例：`表示言語を変更するには？`は「〜を変更する」という見出しが多数あり、Top5ぎりぎりです。`ガイド画面に表示される線は何を表していますか？`は正解ページがTop5に入りません。
-- 質問は日本語で行う前提のため、中国語の質問（5問）は評価の対象外です（参考：Hashでは共通語を含む場合しか当たらず、実Embeddingでは4問ともTop5に入りました）。
-- **数値の読み方：** 評価は小規模で、閾値は似た質問セットで調整した値のため、調整後の数値は楽観的です。1問が約5〜6ポイントに相当し、一般的な精度を示すものではありません。
-
-**既知の制約：**
-
-- **図・画像は解析しません。** テキスト層のみを読み、図やQRコードはChunkに入りません（QRはベクタ描画で画像オブジェクトでもありません）。Chunkにはページ番号だけを保存し、ページ画像の取得による図の表示は未実装です。
-- **レイアウト依存の取りこぼし：** 見出しが背景ボックスだけで表現されるページ、2段組、フォント未対応の記号（`COROLLA`の`(cid:N)`）に個別対応しています。図の凡例ページなど複雑な配置では読み順が乱れることがあります。
-- **標準のEmbeddingはHash（意味理解なし）です。** 実Embeddingでの再評価は上記のとおり実施しましたが、この31問では日本語の精度は同程度でした。言い換えの多い質問での差は、質問数が少なく確認できていません。
-- **Evidence Gateの閾値**（向量`0.4`・キーワード`0.7`）は、PRIUSに対する小規模な手動確認で選んだ値で、上記の31問と一部重なります。他の文書や実Embeddingには再調整が必要です。
-- 生成回答のLLMによる総合評価は行っていません。上記の確認は検索と根拠判定までです。
-
-## Demoの起動と質問例
+## ローカルデモの起動と質問例
 
 新しいローカル検証環境で実行します。seedは残日数を8日にリセットするため、既存のEC2データに対して実行しないでください。
 
@@ -155,7 +147,7 @@ python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
 
 申請はSwaggerで`POST /api/me/leave-requests/prepare`に開始日・終了日を渡し、プレビューを確認後、`POST /api/me/leave-requests`へ`confirmation_token`・`confirmed: true`と`Idempotency-Key`を送ります。[安全な書き込みの設計](docs/03_detailed_design.md)
 
-実モデル・OCR設定、明示的なliveテスト、SSHによる私有AWS検証の詳細は[設定・検証記録](docs/implementation_history.md)を参照してください。鍵は環境変数等で設定し、Gitに保存しません。Embedding変更時は別collectionへ再索引します。
+実モデル・OCR設定、明示的なliveテスト、SSHによるプライベート AWS 環境での検証の詳細は[設定・検証記録](docs/implementation_history.md)を参照してください。鍵は環境変数等で設定し、Gitに保存しません。Embedding変更時は別collectionへ再索引します。
 
 ## テスト・詳細資料
 
@@ -174,11 +166,11 @@ python -m scripts.run_corpus_evaluation
 - [開発記録](docs/development_journal.md) / [実装進捗](docs/phase4_progress.md)
 - [技術説明・面接用メモ](docs/interview_notes.md)
 - [Provider設定・過去の検証記録](docs/implementation_history.md)
-- [私有EC2の更新・ロールバック手順](docs/private_ec2_update.md)
+- [プライベート EC2 環境の更新・ロールバック手順](docs/private_ec2_update.md)
 - [GitHubプロフィール用紹介案と設定方法](docs/github_profile.md)
 
-今後の課題は本番認証、申請用の構造化会話状態、評価データの拡充です。現在のMock認証環境は私有アクセスに限定します。
+今後の課題は本番認証、申請用の構造化会話状態、評価データの拡充です。現在のMock認証環境は限定公開で運用する想定です。
 
 ## 資格
 
-開発者資格：**AWS Certified Generative AI Developer – Professional (AIP-C01)** — [Credlyで検証](https://www.credly.com/badges/265b8796-e4b7-443a-8a57-479f84b083e0/public_url)
+**AWS Certified Generative AI Developer – Professional (AIP-C01)** — [Credlyで検証](https://www.credly.com/badges/265b8796-e4b7-443a-8a57-479f84b083e0/public_url)
