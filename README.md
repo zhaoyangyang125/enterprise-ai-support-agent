@@ -56,7 +56,7 @@
 
 ![取扱書の対象外である東京の人口について、根拠不足を伝えた回答画面](docs/images/prius/07-prius-evidence-gate-refusal.png)
 
-**拒答。** 画面には根拠資料が見つからなかった旨が表示され、人口の推測値も出典も返していません。
+**根拠が不足した場合の応答。** 画面には根拠資料が見つからなかった旨が表示され、人口の推測値も出典も返していません。
 
 Evidence Gate は検索後、回答生成の前に根拠の十分性を判定します。この例のように条件を満たすチャンクがなければ、その時点で処理を終えます。
 
@@ -133,11 +133,11 @@ Hit@k は、上位 k 件のチャンクのいずれかに正解ページが含�
 | Hash | 2/8 | 8/8 | 0.4 / 0.7 |
 | Qwen | 0/8 | 8/8 | 0.5 / 0.7 |
 
-閾値はベクトルスコアとキーワード一致率の順です。日本語の回答可能18問は、両方式とも調整前後で全問が Gate を通過しました。調整に使った質問と評価セットは一部重なるため、未知の質問に対する拒答率は別途検証が必要です。再現用コマンドは `python -m scripts.eval_toyota --verbose --sweep` です。
+閾値はベクトルスコアとキーワード一致率の順です。日本語の回答可能18問は、両方式とも調整前後で全問が Gate を通過しました。調整に使った質問と評価セットは一部重なるため、新たな対象外の質問でも適切に回答を控えられるかは、別途検証する必要があります。再現用コマンドは `python -m scripts.eval_toyota --verbose --sweep` です。
 
 ### 社内文書での評価
 
-5つの架空PDF / Excel、60 Chunk、24問（回答可能21問・回答不能2問・ACL拒否1問）を使用。Top-Kは5です。以下は保存済みの評価結果です。
+架空の社内文書5件（PDF・Excel、計60チャンク）を対象に、24問で評価しました。内訳は回答可能な質問21問、資料に答えがない質問2問、閲覧権限のない利用者からの質問1問です。各質問の検索結果は上位5件までを評価しました。以下は保存済みの評価結果です。
 
 | Embedding・評価日 | 検索方式 | Hit@1 | Hit@5 | Recall@5 | MRR | Source Hit Rate |
 |---|---|---:|---:|---:|---:|---:|
@@ -146,7 +146,7 @@ Hit@k は、上位 k 件のチャンクのいずれかに正解ページが含�
 | text-embedding-v4 / 1024次元（2026-09-26） | Vector | 0.5714 | 1.0000 | 1.0000 | 0.7579 | 1.0000 |
 | text-embedding-v4 / 1024次元（2026-09-26） | Hybrid | 0.7143 | 1.0000 | 1.0000 | 0.8135 | 1.0000 |
 
-両評価のCitationは21/21、回答不能・ACL判断は3/3。回答モードは決定的な`evidence`、OCR / Visionは固定の模擬Providerです。**生成回答やクラウドOCRの総合精度を示す値ではありません。** 小規模な固定データセットであり、Hybridが常に優位という結果でもありません。
+両方の評価で、回答可能な21問すべてに出典を表示し、資料に答えがない場合と閲覧権限がない場合の計3問では回答を控えました。回答には根拠の本文を返す `evidence` モードを使い、OCR と画像認識には固定の結果を返すテスト用の実装を使いました。**生成回答やクラウドOCRの総合精度を示す値ではありません。** 小規模な固定データセットであり、Hybridが常に優位という結果でもありません。
 
 実EmbeddingのEvidence Gate閾値`0.36`はこのモデル・評価用文書で校正した値です。RRF順位スコアとは異なり、他のデータへの適用には再評価が必要です。[評価方法・制約・実モデル結果](docs/evaluation/real_corpus_evaluation_report.md)
 
@@ -169,7 +169,7 @@ python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
 
 ## ローカルデモの起動と質問例
 
-新しいローカル検証環境で実行します。seedは残日数を8日にリセットするため、既存のEC2データに対して実行しないでください。
+以下は新しいローカル検証環境で実行してください。初期データを投入すると有休の残日数が8日に戻ります。
 
 ```powershell
 py -3.12 -m venv .venv
@@ -179,19 +179,21 @@ python -m app.db.seed
 python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
 ```
 
-[Demo UI](http://127.0.0.1:8000/) / [Swagger UI](http://127.0.0.1:8000/docs)を開き、User IDを`U001`に設定します。入力欄近くの「質問例」はクリックで入力され、**送信ボタンを押すまで問い合わせません**。標準seedで検証できる例：
+[デモ画面](http://127.0.0.1:8000/)でユーザー ID を `U001` に設定します。入力欄の近くにある「質問例」を選び、送信ボタンを押すと、以下の内容を初期データで確認できます。API を直接試す場合は [Swagger UI](http://127.0.0.1:8000/docs) を開いてください。
 
 | 質問 | 確認できる内容 |
 |---|---|
 | 私の有給休暇はあと何日ありますか？ | 本人の残日数8日（申請後は変化） |
 | 国内出張の宿泊費上限はいくらですか？ | 1泊10,000円、TravelPolicy_v1.pdf / Page 3 |
-| 国内出張の宿泊費上限の出典を教えてください。 | 同じ規定のCitation |
+| 国内出張の宿泊費上限の出典を教えてください。 | 同じ規程の出典 |
 
-`U999 / D-OTHER / EMPLOYEE`に切り替え、宿泊費を再質問するとseed文書の読み取り権限がないため根拠なしになります。画像付きCitationにはOCR / Visionで取り込んだ別の文書が必要です。オフライン画像確認は`python -m scripts.image_acceptance_demo`で起動し、「虚构导航画面保持显示」を質問します。この入口のVision出力は模擬です。
+`U999 / D-OTHER / EMPLOYEE` に切り替えて同じ宿泊費を尋ねると、この利用者には出張規程の閲覧権限がないため、根拠不足のメッセージが表示されます。
+
+画像付きの出典は、別のローカルデモで確認できます。`python -m scripts.image_acceptance_demo` を実行し、起動時に端末の `Question:` に表示される質問文を `U001` で入力してください。このデモでは画像認識の結果に固定のサンプルを使います。
 
 申請はSwaggerで`POST /api/me/leave-requests/prepare`に開始日・終了日を渡し、プレビューを確認後、`POST /api/me/leave-requests`へ`confirmation_token`・`confirmed: true`と`Idempotency-Key`を送ります。[安全な書き込みの設計](docs/03_detailed_design.md)
 
-実モデル・OCR設定、明示的なliveテスト、SSHによるプライベート AWS 環境での検証の詳細は[設定・検証記録](docs/implementation_history.md)を参照してください。鍵は環境変数等で設定し、Gitに保存しません。Embedding変更時は別collectionへ再索引します。
+外部モデルと OCR の設定、実際の API を使うテスト、SSH 経由での AWS 検証手順は[設定・検証記録](docs/implementation_history.md)を参照してください。API キーは環境変数などで管理します。埋め込みモデルを変更する際は、別のコレクションにインデックスを構築します。
 
 ## テスト・詳細資料
 
@@ -201,15 +203,15 @@ node --test tests/*.test.cjs
 python -m scripts.run_corpus_evaluation
 ```
 
-クラウドliveテストは明示的な有効化が必要で、通常の回帰では外部サービスに送信しません。
+外部サービスを呼び出すテストは、明示的に有効にした場合にのみ実行されます。
 
-- [詳細設計・安全なTool実行](docs/03_detailed_design.md)
+- [詳細設計と業務ツールの実行手順](docs/03_detailed_design.md)
 - [実ファイル検索評価](docs/evaluation/real_corpus_evaluation_report.md)
 - [初期の小型回帰評価](docs/evaluation/day4_retrieval_report.md)
-- [複雑文書解析の設計](docs/complex_document_upgrade_plan.md)
+- [複雑なレイアウトの文書を解析するための設計](docs/complex_document_upgrade_plan.md)
 - [開発記録](docs/development_journal.md) / [実装進捗](docs/phase4_progress.md)
 - [技術説明・面接用メモ](docs/interview_notes.md)
-- [Provider設定・過去の検証記録](docs/implementation_history.md)
+- [モデル接続の設定・過去の検証記録](docs/implementation_history.md)
 - [プライベート EC2 環境の更新・ロールバック手順](docs/private_ec2_update.md)
 - [GitHubプロフィール用紹介案と設定方法](docs/github_profile.md)
 
